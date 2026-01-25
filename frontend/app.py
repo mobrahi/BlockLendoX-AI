@@ -70,14 +70,22 @@ with tab_borrow:
             with st.spinner("AI evaluating creditworthiness..."):
                 try:
                     res = requests.post("http://localhost:8000/request-loan", json=payload)
-                    result = res.json()
+
+                    if res.text:
+                        result = res.json()
                     
+                    else:
+                        result = {}
+                    
+                    # MOVED INSIDE: This only runs if the button was clicked
                     if res.status_code == 200:
+                        tx_hash = result.get('transaction_hash', '0xPending...')
                         st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
-                        st.write(f"**Transaction Hash:** `{result['transaction_hash']}`")
+                        st.write(f"**Transaction Hash:** `{tx_hash}`")
                         st.balloons()
                     else:
-                        st.error(f"❌ Denied: {result.get('detail', 'Risk profile too high.')}")
+                        st.error(f"❌ Error: {result.get('detail', 'Unknown Error')}")
+                
                 except Exception as e:
                     st.error(f"Connection Error: {e}")
 
@@ -100,3 +108,10 @@ with tab_lend:
         st.metric("Your Earnings", "0.045 ETH", "+0.002")
         if st.button("Withdraw Liquidity"):
             st.info("Processing withdrawal request...")
+
+            if res.status_code == 200:
+                # Use .get() to avoid KeyErrors and check if result exists
+                tx_hash = result.get('transaction_hash', 'Pending...')
+                st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
+                st.write(f"**Transaction Hash:** `{tx_hash}`")
+                st.balloons()
