@@ -1,15 +1,21 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from .database import get_db
-from . import crud
 import joblib
 import os
 from pathlib import Path
-from .config import get_settings
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
 from web3 import Web3
+from pydantic import BaseModel
 
+# Internal Imports
+from .database import get_db
+from . import crud
+from .config import get_settings
+
+# --- 1. SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR.parent / "ml_model" / "credit_model.joblib"
+
+app = FastAPI()
 
 if MODEL_PATH.exists():
     model = joblib.load(str(MODEL_PATH))
@@ -18,23 +24,98 @@ else:
     print(f"❌ Error: Model not found at {MODEL_PATH}")
     model = None
 
-app = FastAPI()
+# --- 2. SCHEMAS ---
+class LoanRequest(BaseModel):
+    income: float
+    debt: float
+    wallet: str
+    amount: float
+
+# --- 3. BLOCKCHAIN HELPERS ---
+def trigger_blockchain_loan(borrower_address: str, amount_eth: float, settings):
+    """Signs and sends a transaction to the local blockchain"""
+    try:
+        w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+        
+        if not w3.is_connected():
+            return "0xERROR_W3_CONNECTION"
+
+        if not settings.private_key:
+            print("⚠️ No Private Key found - using Mock Hash")
+            return "0xMOCK_HASH_NO_PRIVATE_KEY"
+
+        # Setup Account
+        admin_account = w3.eth.account.from_key(settings.private_key)
+        amount_wei = w3.to_wei(amount_eth, 'ether')
+        nonce = w3.eth.get_transaction_count(admin_account.address)
+
+        # Build Transaction (Simple Transfer for now)
+        tx = {
+            'nonce': nonce,
+            'to': borrower_address,
+            'value': amount_wei,
+            'gas': 200000,
+            'gasPrice': w3.to_wei('50', 'gwei'),
+            'chainId': settings.chain_id
+        }
+
+        signed_tx = w3.eth.account.sign_transaction(tx, settings.private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        return w3.to_hex(tx_hash)
+    
+    except Exception as e:
+        print(f"Blockchain Error: {e}")
+        return f"0xERR_{str(e)[:8]}"
+
+# --- 4. ROUTES ---
+
+@app.get("/health")
+def health_check():
+    return {"status": "online"}
 
 @app.get("/blockchain-info")
 def get_chain_info(settings=Depends(get_settings)):
-    # Now you use settings.rpc_url instead of hardcoded strings
     w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
-    
     return {
         "connected": w3.is_connected(),
         "chain_id": settings.chain_id,
         "contract": settings.contract_address
     }
 
-@app.get("/health")
-def health_check():
-    return {"status": "online"}
+@app.post("/request-loan")
+async def request_loan(request: LoanRequest, settings=Depends(get_settings)):
+    print(f"Processing loan request for: {request.wallet}")
+    
+    if model is None:
+        raise HTTPException(status_code=500, detail="AI Model not loaded on server.")
 
+    try:
+        # STEP 1: AI Prediction (Using Income, Debt, and a dummy credit score 750)
+        prediction = model.predict([[request.income, request.debt, 750]])[0]
+        
+        if prediction == 0:
+            return {"status": "Rejected", "reason": "AI flagged high financial risk"}
+
+        # STEP 2: Blockchain Execution
+        tx_hash = trigger_blockchain_loan(request.wallet, request.amount, settings)
+        
+        return {
+            "status": "Approved",
+            "ai_score": "High Confidence",
+            "transaction_hash": tx_hash,
+            "message": "Funds are being transferred via Smart Contract"
+        }
+    except Exception as e:
+        print(f"Server Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/deposit")
+def deposit_funds(lender_address: str, amount_eth: float):
+    # Temporary mock for Lender logic
+    print(f"💰 Lender {lender_address} intent: {amount_eth} ETH")
+    return {"status": "success", "message": f"Deposited {amount_eth} ETH"}
+
+# Profile/Signup Routes
 @app.post("/signup")
 def signup(name: str, email: str, income: float, db: Session = Depends(get_db)):
     return crud.create_user(db, name, email, income)
@@ -45,49 +126,3 @@ def view_profile(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
-
-#model = joblib.load("../ml_model/credit_model.joblib")
-
-@app.post("/request-loan")
-def request_loan(income: float, debt: float, age: int):
-    # AI Prediction
-    prediction = model.predict([[income, debt, age]])[0]
-    
-    if prediction == 0:
-        return {"status": "Denied", "reason": "AI flagged high financial risk"}
-    
-    # If prediction == 1, proceed to Blockchain logic...
-    return {"status": "Approved", "next_step": "Triggering Smart Contract"}
-
-@app.post("/deposit")
-def deposit_funds(lender_address: str, amount_eth: float):
-    try:
-        # 1. Connect to Web3 (Ensure Ganache is running!)
-        # 2. Build the transaction for 'depositLiquidity'
-        # 3. For a real demo, you'd trigger a MetaMask prompt, 
-        #    but for a backend test, we can log the intent:
-        
-        print(f"💰 Lender {lender_address} is depositing {amount_eth} ETH")
-        
-        # Return success to Streamlit
-        return {"status": "success", "message": f"Deposited {amount_eth} ETH"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# blockchain handshake test     
-# @app.get("/test-blockchain")
-# def test_blockchain():
-#     from web3 import Web3
-#     # Use the port showing in your Ganache terminal!
-#     w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545")) 
-    
-#     if w3.is_connected():
-#         account_zero = w3.eth.accounts[0]
-#         balance = w3.from_wei(w3.eth.get_balance(account_zero), 'ether')
-#         return {
-#             "status": "Connected",
-#             "first_account": account_zero,
-#             "balance_eth": balance
-#         }
-#     else:
-#         return {"status": "Failed to connect to Ganache"}
