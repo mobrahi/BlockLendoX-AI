@@ -5,6 +5,8 @@ from . import crud
 import joblib
 import os
 from pathlib import Path
+from .config import get_settings
+from web3 import Web3
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR.parent / "ml_model" / "credit_model.joblib"
@@ -17,6 +19,17 @@ else:
     model = None
 
 app = FastAPI()
+
+@app.get("/blockchain-info")
+def get_chain_info(settings=Depends(get_settings)):
+    # Now you use settings.rpc_url instead of hardcoded strings
+    w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+    
+    return {
+        "connected": w3.is_connected(),
+        "chain_id": settings.chain_id,
+        "contract": settings.contract_address
+    }
 
 @app.get("/health")
 def health_check():
