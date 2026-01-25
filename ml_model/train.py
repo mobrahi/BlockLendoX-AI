@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 import joblib
+import os
+
+# Get the directory where train.py actually lives
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 1. Generate 1000 rows of fake financial data
 np.random.seed(42)
@@ -32,3 +36,13 @@ joblib.dump(model, 'credit_model.joblib')
 df.to_csv('dataset.csv', index=False)
 
 print("✅ Model trained and dataset.csv created in ml_model/ folder!")
+
+# Define the exact paths inside the ml_model folder
+model_path = os.path.join(BASE_DIR, 'credit_model.joblib')
+dataset_path = os.path.join(BASE_DIR, 'dataset.csv')
+
+# Save them using absolute paths
+joblib.dump(model, model_path)
+df.to_csv(dataset_path, index=False)
+
+print(f"✅ Success! Files saved in: {BASE_DIR}")
