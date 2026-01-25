@@ -13,9 +13,13 @@ class Settings(BaseSettings):
     contract_address: str = ""
     private_key: str = ""
     secret_key: str = "supersecret"
+    database_url: str = "sqlite:///./sql_app.db"
     
     # This tells Pydantic where to look for the file
-    model_config = SettingsConfigDict(env_file=str(ENV_FILE))
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE),
+        extra='ignore'  # This tells Pydantic: "If you see extra stuff in .env, just ignore it"
+    )
 
 @lru_cache()
 def get_settings():

@@ -32,10 +32,27 @@ class LoanRequest(BaseModel):
     amount: float
 
 # --- 3. BLOCKCHAIN HELPERS ---
-def trigger_blockchain_loan(borrower_address: str, amount_eth: float, settings):
+def trigger_blockchain_loan(
+        borrower_address: str, 
+        amount_eth: float, 
+        settings
+    ):
     """Signs and sends a transaction to the local blockchain"""
     try:
+
         w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+
+        # This line is the ultimate fix: it cleans and validates the address
+        target_address = Web3.to_checksum_address(borrower_address.strip().replace("\ufeff", ""))
+
+        admin_account = w3.eth.account.from_key(settings.private_key)
+
+        # LOG THIS: Make sure the backend is using the address you think it is!
+        print(f"DEBUG: Attempting to send from {admin_account.address}")
+        print(f"DEBUG: Current Balance of Sender: {w3.from_wei(w3.eth.get_balance(admin_account.address), 'ether')} ETH")
+
+        amount_wei = w3.to_wei(amount_eth, 'ether')
+        nonce = w3.eth.get_transaction_count(admin_account.address)
         
         if not w3.is_connected():
             return "0xERROR_W3_CONNECTION"
@@ -51,21 +68,21 @@ def trigger_blockchain_loan(borrower_address: str, amount_eth: float, settings):
 
         # Build Transaction (Simple Transfer for now)
         tx = {
-            'nonce': nonce,
-            'to': borrower_address,
-            'value': amount_wei,
-            'gas': 200000,
-            'gasPrice': w3.to_wei('50', 'gwei'),
+            'nonce': w3.eth.get_transaction_count(admin_account.address),
+            'to': target_address, # Use the cleaned address hereborrower_address,
+            'value': w3.to_wei(amount_eth, 'ether'),
+            'gas': 210000,
+            'gasPrice': w3.eth.gas_price, # Use live gas price from Ganache
             'chainId': settings.chain_id
         }
 
         signed_tx = w3.eth.account.sign_transaction(tx, settings.private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
         return w3.to_hex(tx_hash)
     
     except Exception as e:
-        print(f"Blockchain Error: {e}")
-        return f"0xERR_{str(e)[:8]}"
+        print(f"❌ FULL BLOCKCHAIN ERROR: {str(e)}")
+        return f"0xERR_{str(e)[:10]}"
 
 # --- 4. ROUTES ---
 
@@ -84,8 +101,12 @@ def get_chain_info(settings=Depends(get_settings)):
 
 @app.post("/request-loan")
 async def request_loan(request: LoanRequest, settings=Depends(get_settings)):
-    print(f"Processing loan request for: {request.wallet}")
-    
+    #print(f"Processing loan request for: {request.wallet}")
+    # 1. Sanitize the input - Remove spaces and invisible BOM characters
+    clean_wallet = request.wallet.strip().replace("\ufeff", "")
+    tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
+    print(f"🚀 Processing loan for: {clean_wallet} | Amount: {request.amount} ETH")
+
     if model is None:
         raise HTTPException(status_code=500, detail="AI Model not loaded on server.")
 
@@ -94,11 +115,17 @@ async def request_loan(request: LoanRequest, settings=Depends(get_settings)):
         prediction = model.predict([[request.income, request.debt, 750]])[0]
         
         if prediction == 0:
+            print(f"❌ AI Rejected: {clean_wallet}")
             return {"status": "Rejected", "reason": "AI flagged high financial risk"}
 
         # STEP 2: Blockchain Execution
+        # Pass the CLEANED wallet here
         tx_hash = trigger_blockchain_loan(request.wallet, request.amount, settings)
         
+        if not tx_hash or "ERR" in tx_hash:
+             print(f"⚠️ Blockchain Warning: {tx_hash}")
+             # We still return 200 so the frontend can show the specific error hash
+
         return {
             "status": "Approved",
             "ai_score": "High Confidence",
