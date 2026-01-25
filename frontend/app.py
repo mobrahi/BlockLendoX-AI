@@ -10,6 +10,50 @@ def check_backend():
             return True
     except:
         return False
+    
+st.title("BlockLendoX-AI 🚀")
+
+# Create tabs for Borrower and Lender
+tab1, tab2 = st.tabs(["Borrower Portal", "Lender Portal"])
+
+with tab1:
+    st.header("Request a Loan")
+    
+    # Existing fields
+    income = st.number_input("Annual Income ($)", min_value=0)
+    debt = st.number_input("Total Debt ($)", min_value=0)
+    loan_amount = st.number_input("Loan Amount Requested (ETH)", min_value=0.0)
+    
+    # NEW WALLET FIELD
+    wallet_address = st.text_input("Your Wallet Address (0x...)", placeholder="Enter your Ganache/MetaMask address")
+
+    if st.button("Submit Loan Request"):
+        if not wallet_address.startswith("0x") or len(wallet_address) != 42:
+            st.error("Please enter a valid Ethereum wallet address.")
+        else:
+            # Prepare data for FastAPI
+            payload = {
+                "income": income,
+                "debt": debt,
+                "wallet": wallet_address,
+                "amount": loan_amount
+            }
+            
+            with st.spinner("AI evaluating creditworthiness and checking blockchain..."):
+                try:
+                    # Make sure this port matches your FastAPI (8000 or 8001)
+                    response = requests.post("http://127.0.0.1:8000/request-loan", json=payload)
+                    result = response.json()
+                    
+                    if response.status_code == 200:
+                        st.success(f"✅ {result['status']}!")
+                        st.write(f"**Transaction Hash:** `{result['transaction_hash']}`")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ {result.get('detail', 'AI rejected the loan based on risk profile.')}")
+                
+                except Exception as e:
+                    st.error(f"Backend Offline: {e}")
 
 with st.sidebar:
     st.title("🏦 BlockLendoX-AI")
