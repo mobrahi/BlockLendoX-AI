@@ -60,20 +60,21 @@ def deposit_funds(lender_address: str, amount_eth: float):
         return {"status": "success", "message": f"Deposited {amount_eth} ETH"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# blockchain handshake test     
+# @app.get("/test-blockchain")
+# def test_blockchain():
+#     from web3 import Web3
+#     # Use the port showing in your Ganache terminal!
+#     w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545")) 
     
-@app.get("/test-blockchain")
-def test_blockchain():
-    from web3 import Web3
-    # Use the port showing in your Ganache terminal!
-    w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545")) 
-    
-    if w3.is_connected():
-        account_zero = w3.eth.accounts[0]
-        balance = w3.from_wei(w3.eth.get_balance(account_zero), 'ether')
-        return {
-            "status": "Connected",
-            "first_account": account_zero,
-            "balance_eth": balance
-        }
-    else:
-        return {"status": "Failed to connect to Ganache"}
+#     if w3.is_connected():
+#         account_zero = w3.eth.accounts[0]
+#         balance = w3.from_wei(w3.eth.get_balance(account_zero), 'ether')
+#         return {
+#             "status": "Connected",
+#             "first_account": account_zero,
+#             "balance_eth": balance
+#         }
+#     else:
+#         return {"status": "Failed to connect to Ganache"}
