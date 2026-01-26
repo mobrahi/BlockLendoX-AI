@@ -7,13 +7,18 @@ from web3 import Web3
 from pydantic import BaseModel
 
 # Internal Imports
-from .database import get_db
+from .database import get_db, engine
+from . import models
 from . import crud
 from .config import get_settings
 
 # --- 1. SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR.parent / "ml_model" / "credit_model.joblib"
+
+# This line tells SQLAlchemy to look at your models and create 
+# any tables that don't exist yet in the database.
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -100,18 +105,22 @@ def get_chain_info(settings=Depends(get_settings)):
     }
 
 @app.post("/request-loan")
-async def request_loan(request: LoanRequest, settings=Depends(get_settings)):
-    #print(f"Processing loan request for: {request.wallet}")
-    # 1. Sanitize the input - Remove spaces and invisible BOM characters
+async def request_loan(
+    request: LoanRequest, 
+    db: Session = Depends(get_db), 
+    settings=Depends(get_settings)
+):
+    # 1. Setup variables
     clean_wallet = request.wallet.strip().replace("\ufeff", "")
-    tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
-    print(f"🚀 Processing loan for: {clean_wallet} | Amount: {request.amount} ETH")
-
+    tx_hash = "0xPending"
+    
+    print(f"🚀 Processing loan: {clean_wallet} | Amount: {request.amount} ETH")
+    
     if model is None:
-        raise HTTPException(status_code=500, detail="AI Model not loaded on server.")
+        raise HTTPException(status_code=500, detail="AI Model not loaded.")
 
     try:
-        # STEP 1: AI Prediction (Using Income, Debt, and a dummy credit score 750)
+        # STEP 1: AI Prediction
         prediction = model.predict([[request.income, request.debt, 750]])[0]
         
         if prediction == 0:
@@ -119,34 +128,28 @@ async def request_loan(request: LoanRequest, settings=Depends(get_settings)):
             return {"status": "Rejected", "reason": "AI flagged high financial risk"}
 
         # STEP 2: Blockchain Execution
-        # Pass the CLEANED wallet here
-        tx_hash = trigger_blockchain_loan(request.wallet, request.amount, settings)
+        tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
+
+        # STEP 3: Save to SQL Database (The missing link!)
+        if tx_hash and "ERR" not in tx_hash:
+            crud.create_transaction(
+                db=db, 
+                wallet=clean_wallet, 
+                amount=request.amount, 
+                tx_hash=tx_hash, 
+                status="Approved"
+            )
+            print(f"💾 SQL: Transaction {tx_hash} saved to fintech.db")
         
-        if not tx_hash or "ERR" in tx_hash:
-             print(f"⚠️ Blockchain Warning: {tx_hash}")
-             # We still return 200 so the frontend can show the specific error hash
-
         return {
-            "status": "Approved",
-            "ai_score": "High Confidence",
+            "status": "Approved", 
             "transaction_hash": tx_hash,
-            "message": "Funds are being transferred via Smart Contract"
+            "ai_score": "High Confidence"
         }
-    except Exception as e:
-        print(f"Server Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/request-loan")
-async def request_loan(request: LoanRequest, 
-                       db: Session = Depends(get_db), 
-                       settings=Depends(get_settings)
-            ):
-    # ... your existing AI and Blockchain logic ...
-    
-    # After you get the tx_hash:
-    crud.create_transaction(db, clean_wallet, request.amount, tx_hash, "Approved")
-    
-    return {"status": "Approved", "transaction_hash": tx_hash}
+    except Exception as e:
+        print(f"🔥 Route Error: {e}")
+        return {"status": "Error", "transaction_hash": f"0xERR_{str(e)[:10]}"}
 
 # Add this new route to fetch history
 @app.get("/history")
