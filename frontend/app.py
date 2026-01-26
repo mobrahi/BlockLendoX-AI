@@ -108,14 +108,19 @@ with tab_borrow:
 
 # --- Transaction History Section ---
     st.divider()
-    st.subheader("📜 Recent Activity")
-    
-    if st.session_state.txn_history:
-        # Convert list of dicts to a DataFrame for a clean table look
-        df = pd.DataFrame(st.session_state.txn_history)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.info("No transactions in this session yet.")
+    st.subheader("📜 Permanent Transaction History")
+
+    if st.button("Refresh History"):
+        history_res = requests.get("http://localhost:8000/history")
+        if history_res.status_code == 200:
+            history_data = history_res.json()
+            if history_data:
+                df = pd.DataFrame(history_data)
+                # Clean up columns for display
+                df = df[['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']]
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("No records found in database.")
 
 # --- LENDER TAB ---
 with tab_lend:
