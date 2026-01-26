@@ -136,6 +136,23 @@ async def request_loan(request: LoanRequest, settings=Depends(get_settings)):
         print(f"Server Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/request-loan")
+async def request_loan(request: LoanRequest, 
+                       db: Session = Depends(get_db), 
+                       settings=Depends(get_settings)
+            ):
+    # ... your existing AI and Blockchain logic ...
+    
+    # After you get the tx_hash:
+    crud.create_transaction(db, clean_wallet, request.amount, tx_hash, "Approved")
+    
+    return {"status": "Approved", "transaction_hash": tx_hash}
+
+# Add this new route to fetch history
+@app.get("/history")
+def read_history(db: Session = Depends(get_db)):
+    return crud.get_transactions(db)
+
 @app.post("/deposit")
 def deposit_funds(lender_address: str, amount_eth: float):
     # Temporary mock for Lender logic

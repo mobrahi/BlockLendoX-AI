@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from . import database as db_config
+from . import database as db_config, models
 from sqlalchemy import Column, Integer, String, Float
 
 # Define the User Model
@@ -41,3 +41,18 @@ def delete_user(db: Session, user_id: int):
         db.commit()
         return True
     return False
+
+def create_transaction(db: Session, wallet: str, amount: float, tx_hash: str, status: str):
+    db_tx = models.Transaction(
+        wallet_address=wallet, 
+        amount=amount, 
+        tx_hash=tx_hash, 
+        status=status
+    )
+    db.add(db_tx)
+    db.commit()
+    db.refresh(db_tx)
+    return db_tx
+
+def get_transactions(db: Session, limit: int = 10):
+    return db.query(models.Transaction).order_by(models.Transaction.id.desc()).limit(limit).all()
