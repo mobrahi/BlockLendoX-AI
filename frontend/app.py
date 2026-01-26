@@ -1,6 +1,11 @@
 import streamlit as st
 import requests
+import pandas as pd
+
 from web3 import Web3
+
+if 'txn_history' not in st.session_state:
+    st.session_state.txn_history = []
 
 # 1. Configuration & Setup
 st.set_page_config(page_title="BlockLendoX-AI", layout="wide")
@@ -80,6 +85,18 @@ with tab_borrow:
                     # MOVED INSIDE: This only runs if the button was clicked
                     if res.status_code == 200:
                         tx_hash = result.get('transaction_hash', '0xPending...')
+
+                        # --- NEW: Save to History ---
+                        new_txn = {
+                            "Time": pd.Timestamp.now().strftime("%H:%M:%S"),
+                            "Wallet": f"{final_wallet[:6]}...{final_wallet[-4:]}",
+                            "Amount (ETH)": amount,
+                            "Status": "Approved ✅",
+                            "Tx Hash": tx_hash[:12] + "..."
+                        }
+                        st.session_state.txn_history.append(new_txn)
+                        # ----------------------------
+
                         st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
                         st.write(f"**Transaction Hash:** `{tx_hash}`")
                         st.balloons()
@@ -88,6 +105,17 @@ with tab_borrow:
                 
                 except Exception as e:
                     st.error(f"Connection Error: {e}")
+
+# --- Transaction History Section ---
+    st.divider()
+    st.subheader("📜 Recent Activity")
+    
+    if st.session_state.txn_history:
+        # Convert list of dicts to a DataFrame for a clean table look
+        df = pd.DataFrame(st.session_state.txn_history)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No transactions in this session yet.")
 
 # --- LENDER TAB ---
 with tab_lend:
