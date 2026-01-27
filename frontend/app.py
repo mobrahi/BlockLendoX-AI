@@ -100,20 +100,31 @@ with tab_borrow:
                 "amount": amount
             }
 
+            # ... inside the submit button block ...
             with st.spinner("AI evaluating creditworthiness..."):
                 try:
                     res = requests.post("http://127.0.0.1:8000/request-loan", json=payload)
                     
                     if res.status_code == 200:
                         result = res.json()
-                        st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
-                        st.write(f"**Transaction Hash:** `{result.get('transaction_hash')}`")
-                        st.balloons()
-                        # Clear cache to show new loan in history immediately
-                        st.cache_data.clear()
-                        # st.rerun() # Optional: auto-refresh page
+                        
+                        # --- THE FIX IS HERE ---
+                        # Check the actual logical status, not just HTTP 200
+                        if result.get("status") == "Approved":
+                            st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
+                            st.write(f"**Transaction Hash:** `{result.get('transaction_hash')}`")
+                            st.balloons()
+                            st.cache_data.clear()
+                        else:
+                            # Handle "Rejected" gracefully
+                            reason = result.get("reason", "Risk profile too high.")
+                            st.error(f"❌ Loan Denied: {reason}")
+                            st.info("Tip: Try increasing income or reducing current debt.")
+                        # -----------------------
+
                     else:
-                        st.error(f"❌ Denied: {res.json().get('detail', 'Risk profile too high.')}")
+                        st.error(f"Server Error: {res.status_code}")
+                        
                 except Exception as e:
                     st.error(f"Connection Error: {e}")
 
