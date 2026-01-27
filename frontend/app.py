@@ -36,6 +36,34 @@ with st.sidebar:
 st.title("BlockLendoX-AI 🚀")
 st.markdown("### Decentralized Lending powered by Machine Learning")
 
+# --- NEW: GLOBAL STATS SECTION ---
+# Fetch history immediately to calculate stats
+try:
+    res = requests.get("http://localhost:8000/history")
+    if res.status_code == 200:
+        data = res.json()
+        if data:
+            df = pd.DataFrame(data)
+            
+            # Calculate Metrics
+            total_volume = df['amount'].sum()
+            total_loans = len(df)
+            latest_loan = df.iloc[0]['amount'] if not df.empty else 0
+            
+            # Display Metrics in 3 Columns
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total Volume Traded", f"{total_volume:.4f} ETH", "All Time")
+            m2.metric("Active Loans", f"{total_loans}", "+1")
+            m3.metric("Last Loan Size", f"{latest_loan:.2f} ETH", "Just now")
+        else:
+            st.info("No loans recorded yet.")
+    else:
+        st.warning("Could not fetch stats.")
+except Exception as e:
+    st.error(f"Stats Offline: {e}")
+
+st.divider()
+
 # 4. Create Single Set of Tabs
 tab_borrow, tab_lend = st.tabs(["🔹 Borrow Funds", "🔸 Provide Liquidity"])
 
