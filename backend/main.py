@@ -8,11 +8,11 @@ from pydantic import BaseModel
 
 # Internal Imports
 from .database import get_db, engine
-from . import models
 from . import crud
 from .config import get_settings
+from . import database, crud, models, schemas
 
-# --- 1. SETUP & MODEL LOADING ---
+# --- SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR.parent / "ml_model" / "credit_model.joblib"
 
@@ -29,14 +29,7 @@ else:
     print(f"❌ Error: Model not found at {MODEL_PATH}")
     model = None
 
-# --- 2. SCHEMAS ---
-class LoanRequest(BaseModel):
-    income: float
-    debt: float
-    wallet: str
-    amount: float
-
-# --- 3. BLOCKCHAIN HELPERS ---
+# --- BLOCKCHAIN HELPERS ---
 def trigger_blockchain_loan(
         borrower_address: str, 
         amount_eth: float, 
@@ -89,7 +82,7 @@ def trigger_blockchain_loan(
         print(f"❌ FULL BLOCKCHAIN ERROR: {str(e)}")
         return f"0xERR_{str(e)[:10]}"
 
-# --- 4. ROUTES ---
+# --- ROUTES ---
 
 @app.get("/health")
 def health_check():
@@ -106,7 +99,7 @@ def get_chain_info(settings=Depends(get_settings)):
 
 @app.post("/request-loan")
 async def request_loan(
-    request: LoanRequest, 
+    request: schemas.LoanRequest, 
     db: Session = Depends(get_db), 
     settings=Depends(get_settings)
 ):
@@ -132,13 +125,13 @@ async def request_loan(
 
         # STEP 3: Save to SQL Database (The missing link!)
         if tx_hash and "ERR" not in tx_hash:
-            crud.create_transaction(
-                db=db, 
-                wallet=clean_wallet, 
-                amount=request.amount, 
-                tx_hash=tx_hash, 
+            tx_schema = schemas.TransactionCreate(
+                wallet_address=clean_wallet,
+                amount=request.amount,
+                tx_hash=tx_hash,
                 status="Approved"
             )
+            crud.create_transaction(db, tx_schema)
             print(f"💾 SQL: Transaction {tx_hash} saved to fintech.db")
         
         return {
@@ -173,3 +166,21 @@ def view_profile(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+# --- NEW: UPDATE & DELETE ROUTES ---
+
+@app.put("/transaction/{tx_id}", response_model=schemas.TransactionResponse)
+def update_loan_status(tx_id: int, update_data: schemas.TransactionUpdate, db: Session = Depends(database.get_db)):
+    """Update a loan status (e.g. to 'Repaid')"""
+    updated_tx = crud.update_transaction_status(db, tx_id, update_data.status)
+    if not updated_tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return updated_tx
+
+@app.delete("/transaction/{tx_id}")
+def delete_loan_record(tx_id: int, db: Session = Depends(database.get_db)):
+    """Delete a transaction log (Admin only)"""
+    success = crud.delete_transaction(db, tx_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"status": "success", "message": f"Transaction {tx_id} deleted"}
