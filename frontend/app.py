@@ -1,70 +1,70 @@
 import streamlit as st
 import requests
 import pandas as pd
-
 from web3 import Web3
-
-if 'txn_history' not in st.session_state:
-    st.session_state.txn_history = []
 
 # 1. Configuration & Setup
 st.set_page_config(page_title="BlockLendoX-AI", layout="wide")
 
-def check_backend():
+# 2. Caching: Fetch Data Efficiently
+@st.cache_data(ttl=5)
+def fetch_global_stats():
     try:
-        response = requests.get("http://localhost:8000/health", timeout=2)
-        return response.status_code == 200
-    except:
-        return False
+        # Use 127.0.0.1 to avoid Mac localhost timeout issues
+        res = requests.get("http://127.0.0.1:8000/history", timeout=5)
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        return []
+    return []
 
-# 2. Sidebar - Status & Metrics
+# 3. Sidebar - Status & Metrics
 with st.sidebar:
     st.title("🏦 BlockLendoX-AI")
     
-    if check_backend():
-        st.success("● System Online")
-    else:
+    # Simple Health Check
+    try:
+        if requests.get("http://127.0.0.1:8000/health", timeout=1).status_code == 200:
+            st.success("● System Online")
+        else:
+            st.error("○ Backend Offline")
+    except:
         st.error("○ Backend Offline")
         st.warning("Run: uvicorn backend.main:app")
     
     st.divider()
-    st.metric(label="Total Pool Liquidity", value="15.5 ETH", delta="2.1 ETH")
-    st.divider()
-    st.info("System Version: v1.0.2 (AI-Enabled)")
+    st.info("System Version: v1.0.5 (Live DB)")
 
-# 3. Main UI Header
+# 4. Main UI Header & Stats
 st.title("BlockLendoX-AI 🚀")
 st.markdown("### Decentralized Lending powered by Machine Learning")
 
-# --- NEW: GLOBAL STATS SECTION ---
-# Fetch history immediately to calculate stats
-try:
-    res = requests.get("http://localhost:8000/history")
-    if res.status_code == 200:
-        data = res.json()
-        if data:
-            df = pd.DataFrame(data)
-            
-            # Calculate Metrics
-            total_volume = df['amount'].sum()
-            total_loans = len(df)
-            latest_loan = df.iloc[0]['amount'] if not df.empty else 0
-            
-            # Display Metrics in 3 Columns
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Volume Traded", f"{total_volume:.4f} ETH", "All Time")
-            m2.metric("Active Loans", f"{total_loans}", "+1")
-            m3.metric("Last Loan Size", f"{latest_loan:.2f} ETH", "Just now")
-        else:
-            st.info("No loans recorded yet.")
-    else:
-        st.warning("Could not fetch stats.")
-except Exception as e:
-    st.error(f"Stats Offline: {e}")
+# Fetch Data Globally (Runs once every 5s)
+history_data = fetch_global_stats()
+df = pd.DataFrame() # Initialize empty DF to prevent NameErrors later
+
+if history_data:
+    df = pd.DataFrame(history_data)
+    
+    # Calculate Global Metrics
+    if 'amount' in df.columns:
+        total_volume = df['amount'].sum()
+        total_loans = len(df)
+        latest_loan = df.iloc[0]['amount'] if not df.empty else 0
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Volume", f"{total_volume:.4f} ETH")
+        m2.metric("Active Loans", f"{total_loans}")
+        m3.metric("Latest Loan", f"{latest_loan:.2f} ETH")
+else:
+    st.warning("Waiting for data... (If this persists, check Backend)")
+    if st.button("Retry Connection"):
+        st.cache_data.clear()
+        st.rerun()
 
 st.divider()
 
-# 4. Create Single Set of Tabs
+# 5. Tabs for Roles
 tab_borrow, tab_lend = st.tabs(["🔹 Borrow Funds", "🔸 Provide Liquidity"])
 
 # --- BORROWER TAB ---
@@ -73,7 +73,7 @@ with tab_borrow:
     
     col1, col2 = st.columns(2)
     with col1:
-        u_id = st.number_input("User ID", min_value=1, value=101)
+        # Default values help speed up testing
         income = st.number_input("Monthly Income ($)", min_value=0, value=5000)
         debt = st.number_input("Monthly Debt ($)", min_value=0, value=1000)
     
@@ -81,18 +81,18 @@ with tab_borrow:
         amount = st.slider("Loan Amount (ETH)", 0.1, 5.0, 0.5)
         wallet_input = st.text_input("Your Wallet Address (0x...)", placeholder="Enter Ganache address")
 
+    # --- SUBMIT BUTTON LOGIC ---
     if st.button("Submit to AI Backend"):
         clean_wallet = wallet_input.strip()
         
-        # Sequential Validation
+        # Validation
         if not clean_wallet:
             st.warning("Please enter a wallet address.")
         elif not Web3.is_address(clean_wallet):
-            st.error("Invalid Ethereum address format or checksum.")
+            st.error("Invalid Ethereum address format.")
         else:
             final_wallet = Web3.to_checksum_address(clean_wallet)
             
-            # Prepare payload to match your FastAPI Pydantic model
             payload = {
                 "income": income,
                 "debt": debt,
@@ -102,77 +102,70 @@ with tab_borrow:
 
             with st.spinner("AI evaluating creditworthiness..."):
                 try:
-                    res = requests.post("http://localhost:8000/request-loan", json=payload)
-
-                    if res.text:
-                        result = res.json()
+                    res = requests.post("http://127.0.0.1:8000/request-loan", json=payload)
                     
-                    else:
-                        result = {}
-                    
-                    # MOVED INSIDE: This only runs if the button was clicked
                     if res.status_code == 200:
-                        tx_hash = result.get('transaction_hash', '0xPending...')
-
-                        # --- NEW: Save to History ---
-                        new_txn = {
-                            "Time": pd.Timestamp.now().strftime("%H:%M:%S"),
-                            "Wallet": f"{final_wallet[:6]}...{final_wallet[-4:]}",
-                            "Amount (ETH)": amount,
-                            "Status": "Approved ✅",
-                            "Tx Hash": tx_hash[:12] + "..."
-                        }
-                        st.session_state.txn_history.append(new_txn)
-                        # ----------------------------
-
+                        result = res.json()
                         st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
-                        st.write(f"**Transaction Hash:** `{tx_hash}`")
+                        st.write(f"**Transaction Hash:** `{result.get('transaction_hash')}`")
                         st.balloons()
+                        # Clear cache to show new loan in history immediately
+                        st.cache_data.clear()
+                        # st.rerun() # Optional: auto-refresh page
                     else:
-                        st.error(f"❌ Error: {result.get('detail', 'Unknown Error')}")
-                
+                        st.error(f"❌ Denied: {res.json().get('detail', 'Risk profile too high.')}")
                 except Exception as e:
                     st.error(f"Connection Error: {e}")
 
-# --- Transaction History Section ---
+    # --- HISTORY & REPAYMENT SECTION ---
     st.divider()
-    st.subheader("📜 Permanent Transaction History")
-
-    if st.button("Refresh History"):
-        history_res = requests.get("http://localhost:8000/history")
-        if history_res.status_code == 200:
-            history_data = history_res.json()
-            if history_data:
-                df = pd.DataFrame(history_data)
-                # Clean up columns for display
-                df = df[['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']]
-                st.dataframe(df, use_container_width=True)
+    st.subheader("📜 Transaction History")
+    
+    if not df.empty:
+        # 1. Display Table (Visual Copy only)
+        display_cols = ['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
+        valid_cols = [c for c in display_cols if c in df.columns]
+        st.dataframe(df[valid_cols], width="stretch", hide_index=True)
+        
+        # 2. Repayment Console
+        st.divider()
+        st.subheader("💸 Repayment Console")
+        
+        # Check if we have the necessary columns for logic
+        if 'status' in df.columns and 'id' in df.columns:
+            # Filter for active loans
+            active_loans = df[df['status'] == "Approved"]
+            
+            if not active_loans.empty:
+                # Create dropdown string
+                loan_options = active_loans.apply(
+                    lambda x: f"ID: {x['id']} | {x['amount']} ETH | {x['timestamp']}", axis=1
+                )
+                selected_loan_str = st.selectbox("Select Loan to Repay", loan_options)
+                
+                if st.button("Mark as Repaid"):
+                    # Extract ID safely
+                    loan_id = int(selected_loan_str.split("|")[0].replace("ID:", "").strip())
+                    
+                    try:
+                        res = requests.put(f"http://127.0.0.1:8000/transaction/{loan_id}", json={"status": "Repaid"})
+                        if res.status_code == 200:
+                            st.success("Repayment Successful!")
+                            st.cache_data.clear() # Clear cache to update UI
+                            st.rerun()
+                        else:
+                            st.error("Update failed.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
             else:
-                st.info("No records found in database.")
+                st.info("No active loans to repay. You are debt-free! 🎉")
+        else:
+            st.warning("Data missing required columns.")
+    else:
+        st.info("No transactions found yet.")
 
 # --- LENDER TAB ---
 with tab_lend:
     st.header("Lender Dashboard")
     st.write("Deposit ETH to provide liquidity and earn interest.")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Add Funds")
-        deposit_amt = st.number_input("Amount to Deposit (ETH)", min_value=0.1)
-        if st.button("Confirm Deposit"):
-            # This is where we will eventually call /deposit
-            st.info(f"Initiating deposit of {deposit_amt} ETH...")
-            st.warning("Blockchain bridge for deposits coming in next update!")
-
-    with c2:
-        st.subheader("Your Stats")
-        st.metric("Your Earnings", "0.045 ETH", "+0.002")
-        if st.button("Withdraw Liquidity"):
-            st.info("Processing withdrawal request...")
-
-            if res.status_code == 200:
-                # Use .get() to avoid KeyErrors and check if result exists
-                tx_hash = result.get('transaction_hash', 'Pending...')
-                st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
-                st.write(f"**Transaction Hash:** `{tx_hash}`")
-                st.balloons()
+    st.info("Coming soon in Phase 2!")
