@@ -14,6 +14,7 @@ from . import database, crud, models, schemas
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request 
+from .schemas import LoanRequest, DepositRequest
 
 # --- SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -22,8 +23,6 @@ MODEL_PATH = BASE_DIR.parent / "ml_model" / "credit_model.joblib"
 # This line tells SQLAlchemy to look at your models and create 
 # any tables that don't exist yet in the database.
 models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI()
 
 app = FastAPI()
 
@@ -38,12 +37,6 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 @app.get("/")
 def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-# if MODEL_PATH.exists():
-#     model = joblib.load(str(MODEL_PATH))
-#     print(f"✅ AI Model successfully loaded from: {MODEL_PATH}")
-# else:
-#     print(f"❌ Error: Model not found at {MODEL_PATH}")
-#     model = None
 
 # --- BLOCKCHAIN HELPERS ---
 def trigger_blockchain_loan(
@@ -165,12 +158,6 @@ async def request_loan(
 def read_history(db: Session = Depends(get_db)):
     return crud.get_transactions(db)
 
-@app.post("/deposit")
-def deposit_funds(lender_address: str, amount_eth: float):
-    # Temporary mock for Lender logic
-    print(f"💰 Lender {lender_address} intent: {amount_eth} ETH")
-    return {"status": "success", "message": f"Deposited {amount_eth} ETH"}
-
 # Profile/Signup Routes
 @app.post("/signup")
 def signup(name: str, email: str, income: float, db: Session = Depends(get_db)):
@@ -200,3 +187,54 @@ def delete_loan_record(tx_id: int, db: Session = Depends(database.get_db)):
     if not success:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {"status": "success", "message": f"Transaction {tx_id} deleted"}
+
+# --- NEW: POOL BALANCE ENDPOINT ---
+@app.get("/pool-balance")
+def get_pool_balance(settings=Depends(get_settings)):
+    try:
+        w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+        if not w3.is_connected():
+            return {"balance": 0.0, "error": "Blockchain offline"}
+        
+        # Get the balance of the Admin Account (The "Pool")
+        admin_account = w3.eth.account.from_key(settings.private_key).address
+        balance_wei = w3.eth.get_balance(admin_account)
+        balance_eth = w3.from_wei(balance_wei, 'ether')
+        
+        return {"balance": float(balance_eth), "admin_address": admin_account}
+    except Exception as e:
+        print(f"Pool Error: {e}")
+        return {"balance": 0.0, "error": str(e)}
+
+# --- NEW: DEPOSIT ENDPOINT ---
+
+@app.post("/deposit")
+def deposit_liquidity(
+    request: schemas.DepositRequest, 
+    db: Session = Depends(get_db)
+):
+    # 1. Sanitize Input
+    clean_wallet = request.wallet.strip().replace("\ufeff", "")
+    print(f"💰 Deposit Request: {clean_wallet} | {request.amount} ETH")
+    
+    # 2. Create Mock Hash (Since we don't sign deposits on backend)
+    mock_hash = f"0xDEPOSIT_{clean_wallet[:4]}_{request.amount}"
+    
+    try:
+        # 3. Create the Schema Object (The Fix!)
+        # We must bundle the data into the Pydantic model expected by crud.py
+        deposit_tx = schemas.TransactionCreate(
+            wallet_address=clean_wallet,
+            amount=request.amount,
+            tx_hash=mock_hash,
+            status="Liquidity Added"
+        )
+
+        # 4. Pass the SINGLE object to CRUD
+        crud.create_transaction(db, deposit_tx)
+        
+        return {"status": "Success", "message": "Liquidity recorded in ledger"}
+
+    except Exception as e:
+        print(f"🔥 Deposit Error: {e}") # Print error to terminal for debugging
+        raise HTTPException(status_code=500, detail=str(e))
