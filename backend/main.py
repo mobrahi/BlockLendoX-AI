@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from web3 import Web3
 from pydantic import BaseModel
 
@@ -374,3 +375,34 @@ def deposit_liquidity(
     except Exception as e:
         print(f"🔥 Deposit Error: {e}") # Print error to terminal for debugging
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- NEW: ANALYTICS ENDPOINT ---
+from sqlalchemy import func # Add to imports
+
+@app.get("/analytics/summary")
+def get_loan_summary(db: Session = Depends(get_db)):
+    # 1. Overall Protocol Stats
+    total_loaned = db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Approved").scalar() or 0
+    total_repaid = db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Repaid").scalar() or 0
+    
+    # 2. Per-User Summary (The "Summary Table" logic)
+    user_summaries = db.query(
+        models.User.full_name,
+        models.User.id.label("user_id"),
+        func.sum(models.Transaction.amount).label("total_borrowed"),
+        func.count(models.Transaction.id).label("loan_count")
+    ).join(models.Transaction, models.User.id == models.Transaction.user_id)\
+     .filter(models.Transaction.status == "Approved")\
+     .group_by(models.User.id).all()
+
+    # Convert to list of dicts for JSON
+    user_data = [
+        {"name": row.full_name, "id": row.user_id, "borrowed": row.total_borrowed, "loans": row.loan_count}
+        for row in user_summaries
+    ]
+
+    return {
+        "protocol_total_loaned": total_loaned,
+        "protocol_total_repaid": total_repaid,
+        "user_breakdown": user_data
+    }

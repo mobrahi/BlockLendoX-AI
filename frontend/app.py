@@ -66,7 +66,7 @@ else:
 st.divider()
 
 # 5. Tabs for Roles
-tab_borrow, tab_lend = st.tabs(["🔹 Borrow Funds", "🔸 Provide Liquidity"])
+tab_borrow, tab_lend, tab_stats = st.tabs(["🔹 Borrow Funds", "🔸 Provide Liquidity", "📈 Analytics"])
 
 # --- BORROWER TAB ---
 with tab_borrow:
@@ -256,3 +256,48 @@ with tab_lend:
                 st.info("No active deposits found.")
         else:
             st.info("Connect wallet to view history.")
+
+# --- ANALYTICS TAB ---
+with tab_stats:
+    st.header("Protocol Analytics")
+    
+    res = requests.get("http://localhost:8000/analytics/summary")
+    if res.status_code == 200:
+        data = res.json()
+        
+        # --- A. Global Visuals ---
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("### 💰 Protocol Health")
+            st.metric("Total Loaned", f"{data['protocol_total_loaned']:.2f} ETH")
+            st.metric("Total Repaid", f"{data['protocol_total_repaid']:.2f} ETH")
+            
+        with col2:
+            st.write("### 📈 Loan vs Repayment")
+            # Simple chart data
+            chart_data = pd.DataFrame({
+                'Category': ['Loaned', 'Repaid'],
+                'Amount (ETH)': [data['protocol_total_loaned'], data['protocol_total_repaid']]
+            }).set_index('Category')
+            st.bar_chart(chart_data)
+
+        st.divider()
+
+        # --- B. User Summary Table ---
+        st.write("### 👥 Borrower Leaderboard")
+        if data['user_breakdown']:
+            summary_df = pd.DataFrame(data['user_breakdown'])
+            
+            # Renaming for professional look
+            summary_df.columns = ["Borrower Name", "User ID", "Total Borrowed (ETH)", "No. of Loans"]
+            
+            # Show Table
+            st.table(summary_df)
+            
+            # Visual Representation of Borrowing per User
+            st.write("### 📊 Distribution of Loans by User")
+            st.bar_chart(summary_df.set_index("Borrower Name")["Total Borrowed (ETH)"])
+        else:
+            st.info("No active loan data to display.")
+    else:
+        st.error("Could not fetch analytics.")
