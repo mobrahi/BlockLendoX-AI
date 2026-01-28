@@ -2,6 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
+import plotly.express as px
+import matplotlib.pyplot as plt
 from web3 import Web3
 
 # 1. Configuration & Setup
@@ -257,46 +259,78 @@ with tab_lend:
         else:
             st.info("Connect wallet to view history.")
 
-# --- ANALYTICS TAB ---
+# --- ANALYTICS TAB (UPGRADED WITH PLOTLY) ---
 with tab_stats:
-    st.header("Protocol Analytics")
+    st.header("Protocol Analytics Dashboard")
     
     res = requests.get("http://localhost:8000/analytics/summary")
     if res.status_code == 200:
         data = res.json()
         
-        # --- A. Global Visuals ---
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("### 💰 Protocol Health")
-            st.metric("Total Loaned", f"{data['protocol_total_loaned']:.2f} ETH")
-            st.metric("Total Repaid", f"{data['protocol_total_repaid']:.2f} ETH")
-            
-        with col2:
-            st.write("### 📈 Loan vs Repayment")
-            # Simple chart data
-            chart_data = pd.DataFrame({
-                'Category': ['Loaned', 'Repaid'],
-                'Amount (ETH)': [data['protocol_total_loaned'], data['protocol_total_repaid']]
-            }).set_index('Category')
-            st.bar_chart(chart_data)
+        # --- 1. Top Level Metrics ---
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Loaned", f"{data['protocol_total_loaned']:.2f} ETH")
+        m2.metric("Total Repaid", f"{data['protocol_total_repaid']:.2f} ETH")
+        
+        # Calculate "Money in Flight"
+        outstanding = data['protocol_total_loaned'] - data['protocol_total_repaid']
+        m3.metric("Outstanding Debt", f"{outstanding:.2f} ETH", delta_color="inverse")
 
         st.divider()
 
-        # --- B. User Summary Table ---
-        st.write("### 👥 Borrower Leaderboard")
+        col1, col2 = st.columns(2)
+
+        # --- 2. Chart: Loan vs Repayment (Interactive Pie Chart) ---
+        with col1:
+            st.write("### 🍰 Capital Distribution")
+            pie_df = pd.DataFrame({
+                'Status': ['Loaned (Out)', 'Repaid (In)'],
+                'Amount': [data['protocol_total_loaned'], data['protocol_total_repaid']]
+            })
+            
+            # Using Plotly Express for a clean donut chart
+            fig_pie = px.pie(
+                pie_df, 
+                values='Amount', 
+                names='Status', 
+                hole=0.4,
+                color_discrete_sequence=['#FF4B4B', '#00D4FF'] # Red for out, Blue for in
+            )
+            fig_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        # --- 3. Chart: User Borrowing (Horizontal Bar Chart) ---
+        with col2:
+            st.write("### 🏆 Top Borrowers")
+            if data['user_breakdown']:
+                user_df = pd.DataFrame(data['user_breakdown'])
+                
+                # Plotly Horizontal Bar
+                fig_bar = px.bar(
+                    user_df, 
+                    x='borrowed', 
+                    y='name', 
+                    orientation='h',
+                    labels={'borrowed': 'Total Borrowed (ETH)', 'name': 'Borrower Name'},
+                    color='borrowed',
+                    color_continuous_scale='Blues'
+                )
+                fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(t=0, b=0, l=0, r=0))
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.divider()
+
+        # --- 4. User Summary Table (The "Leaderboard") ---
+        st.write("### 👥 Borrower Detailed Leaderboard")
         if data['user_breakdown']:
             summary_df = pd.DataFrame(data['user_breakdown'])
-            
-            # Renaming for professional look
             summary_df.columns = ["Borrower Name", "User ID", "Total Borrowed (ETH)", "No. of Loans"]
             
-            # Show Table
-            st.table(summary_df)
-            
-            # Visual Representation of Borrowing per User
-            st.write("### 📊 Distribution of Loans by User")
-            st.bar_chart(summary_df.set_index("Borrower Name")["Total Borrowed (ETH)"])
+            # Style the table to highlight high borrowers
+            st.dataframe(
+                summary_df.style.background_gradient(subset=["Total Borrowed (ETH)"], cmap="Blues"),
+                use_container_width=True
+            )
         else:
             st.info("No active loan data to display.")
     else:

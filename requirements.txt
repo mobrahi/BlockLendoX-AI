@@ -1,5 +1,4 @@
 fastapi[standard]
-uvicorn
 sqlalchemy
 web3
 streamlit
@@ -10,3 +9,5 @@ python-dotenv
 requests
 pydantic-settings
 jinja2
+plotly
+matplotlib
