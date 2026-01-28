@@ -74,9 +74,10 @@ with tab_borrow:
     
     col1, col2 = st.columns(2)
     with col1:
-        # Default values help speed up testing
-        income = st.number_input("Monthly Income ($)", min_value=0, value=5000)
-        debt = st.number_input("Monthly Debt ($)", min_value=0, value=1000)
+        user_id_input = st.number_input("Enter Your User ID", min_value=1, value=1)
+        # 💡 PRO TIP: You can remove the income input entirely!
+        # The backend will look it up automatically.
+        debt = st.number_input("Current Monthly Debt ($)", min_value=0, value=1000)
     
     with col2:
         amount = st.slider("Loan Amount (ETH)", 0.1, 5.0, 0.5)
@@ -95,7 +96,8 @@ with tab_borrow:
             final_wallet = Web3.to_checksum_address(clean_wallet)
             
             payload = {
-                "income": income,
+                "user_id": user_id_input, # Send the ID
+                "income": 0, # We can send 0 because the backend will ignore it!
                 "debt": debt,
                 "wallet": final_wallet,
                 "amount": amount

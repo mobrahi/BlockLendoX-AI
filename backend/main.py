@@ -8,9 +8,9 @@ from pydantic import BaseModel
 
 # Internal Imports
 from .database import get_db, engine
-from . import crud
+from . import crud, models
 from .config import get_settings
-from . import database, crud, models, schemas
+from . import database, crud, schemas
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request 
@@ -19,6 +19,14 @@ from .schemas import LoanRequest, DepositRequest
 # --- SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR.parent / "ml_model" / "credit_model.joblib"
+
+# --- Load the AI ---
+if MODEL_PATH.exists():
+    ml_model = joblib.load(str(MODEL_PATH)) # <--- RENAME THIS to 'ml_model'
+    print(f"✅ AI Model successfully loaded from: {MODEL_PATH}")
+else:
+    print(f"❌ Error: Model not found at {MODEL_PATH}")
+    ml_model = None # <--- RENAME THIS
 
 # This line tells SQLAlchemy to look at your models and create 
 # any tables that don't exist yet in the database.
@@ -112,22 +120,59 @@ async def request_loan(
     db: Session = Depends(get_db), 
     settings=Depends(get_settings)
 ):
-    # 1. Setup variables
+    # 1. Fetch User (The Source of Truth)
+    user = crud.get_user(db, request.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Logic Shift: Use the INCOME from the Database, not the form!
+    db_income = user.income
+    print(f"🕵️ Verification: Using DB Income for {user.full_name}: ${db_income}")
+
+    # 3. Sanitize input
     clean_wallet = request.wallet.strip().replace("\ufeff", "")
-    tx_hash = "0xPending"
-    
-    print(f"🚀 Processing loan: {clean_wallet} | Amount: {request.amount} ETH")
-    
-    if model is None:
-        raise HTTPException(status_code=500, detail="AI Model not loaded.")
 
     try:
-        # STEP 1: AI Prediction
-        prediction = model.predict([[request.income, request.debt, 750]])[0]
+        # STEP 1: AI Prediction (Now using db_income!)
+        # We pass db_income instead of request.income
+        prediction = ml_model.predict([[db_income, request.debt, 750]])[0]
         
         if prediction == 0:
-            print(f"❌ AI Rejected: {clean_wallet}")
-            return {"status": "Rejected", "reason": "AI flagged high financial risk"}
+            return {"status": "Rejected", "reason": "AI flagged risk based on PROFILE income."}
+
+        # ... (rest of the blockchain/db logic) ...
+# @app.post("/request-loan")
+# async def request_loan(
+#     request: schemas.LoanRequest, 
+#     db: Session = Depends(get_db), 
+#     settings=Depends(get_settings)
+# ):
+#     # 1. Setup variables
+#     clean_wallet = request.wallet.strip().replace("\ufeff", "")
+#     tx_hash = "0xPending"
+    
+#     print(f"🚀 Processing loan: {clean_wallet} | Amount: {request.amount} ETH")
+    
+#     if ml_model is None:
+#         raise HTTPException(status_code=500, detail="AI Model not loaded.")
+
+#     try:
+#         # STEP 1: AI Prediction
+#         # We simulate a credit score look-up based on their income history
+#         # (In a real app, this would come from Equifax or the User DB)
+        
+#         # Logic: If they have high income, give them a good 'simulated' score for the demo
+#         simulated_score = 750 if request.income > 3000 else 550
+#         # Pass the matched features: [Income, Debt, Credit Score]
+#         # Notice we pass 'simulated_score' (750), which is now valid because the model knows scores go up to 850.
+#         prediction = ml_model.predict([[request.income, request.debt, simulated_score]])[0]
+
+#         print(f"🤖 AI Inputs: Income={request.income}, Debt={request.debt}, Score={simulated_score}")
+#         print(f"🤖 AI Result: {prediction}")
+        
+#         if prediction == 0:
+#             print(f"❌ AI Rejected: {clean_wallet}")
+#             return {"status": "Rejected", "reason": "AI flagged high financial risk"}
 
         # STEP 2: Blockchain Execution
         tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
@@ -138,11 +183,12 @@ async def request_loan(
                 wallet_address=clean_wallet,
                 amount=request.amount,
                 tx_hash=tx_hash,
-                status="Approved"
+                status="Approved",
+                user_id=request.user_id
             )
-            crud.create_transaction(db, tx_schema)
+            crud.create_transaction(db, tx_schema, user_id=request.user_id)
             print(f"💾 SQL: Transaction {tx_hash} saved to fintech.db")
-        
+
         return {
             "status": "Approved", 
             "transaction_hash": tx_hash,
@@ -153,19 +199,72 @@ async def request_loan(
         print(f"🔥 Route Error: {e}")
         return {"status": "Error", "transaction_hash": f"0xERR_{str(e)[:10]}"}
 
+
+# @app.post("/request-loan")
+# async def request_loan(
+#     request: schemas.LoanRequest, 
+#     db: Session = Depends(get_db), 
+#     settings=Depends(get_settings)
+# ):
+#     # 1. Setup variables
+#     clean_wallet = request.wallet.strip().replace("\ufeff", "")
+#     tx_hash = "0xPending"
+    
+#     print(f"🚀 Processing loan: {clean_wallet} | Amount: {request.amount} ETH")
+    
+#     if model is None:
+#         raise HTTPException(status_code=500, detail="AI Model not loaded.")
+
+#     try:
+#         # STEP 1: AI Prediction
+#         prediction = model.predict([[request.income, request.debt, 750]])[0]
+        
+#         if prediction == 0:
+#             print(f"❌ AI Rejected: {clean_wallet}")
+#             return {"status": "Rejected", "reason": "AI flagged high financial risk"}
+
+#         # STEP 2: Blockchain Execution
+#         tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
+
+#         # STEP 3: Save to SQL Database (The missing link!)
+#         if tx_hash and "ERR" not in tx_hash:
+#             tx_schema = schemas.TransactionCreate(
+#                 wallet_address=clean_wallet,
+#                 amount=request.amount,
+#                 tx_hash=tx_hash,
+#                 status="Approved"
+#             )
+#             crud.create_transaction(db, tx_schema)
+#             print(f"💾 SQL: Transaction {tx_hash} saved to fintech.db")
+        
+#         return {
+#             "status": "Approved", 
+#             "transaction_hash": tx_hash,
+#             "ai_score": "High Confidence"
+#         }
+
+#     except Exception as e:
+#         print(f"🔥 Route Error: {e}")
+#         return {"status": "Error", "transaction_hash": f"0xERR_{str(e)[:10]}"}
+
 # Add this new route to fetch history
 @app.get("/history")
 def read_history(db: Session = Depends(get_db)):
     return crud.get_transactions(db)
 
 # Profile/Signup Routes
-@app.post("/signup")
-def signup(name: str, email: str, income: float, db: Session = Depends(get_db)):
-    return crud.create_user(db, name, email, income)
+@app.post("/signup", response_model=schemas.UserResponse)
+def signup(
+    user: schemas.UserCreate,  # <--- Now expects JSON matching the schema
+    db: Session = Depends(get_db)
+):
+    # Pass the SINGLE schema object to CRUD
+    return crud.create_user(db=db, user=user)
 
 @app.get("/profile/{user_id}")
 def view_profile(user_id: int, db: Session = Depends(get_db)):
-    user = crud.get_user_by_id(db, user_id)
+    # ✅ NEW: Use the correct name defined in crud.py
+    user = crud.get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

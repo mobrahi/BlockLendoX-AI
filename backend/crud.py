@@ -23,8 +23,11 @@ def get_user(db: Session, user_id: int):
 # --- TRANSACTION CRUD ---
 
 # CREATE
-def create_transaction(db: Session, transaction: schemas.TransactionCreate):
+# backend/crud.py
+def create_transaction(db: Session, transaction: schemas.TransactionCreate, user_id: int):
+    # We use the user_id passed in the arguments
     db_tx = models.Transaction(
+        user_id=user_id, 
         wallet_address=transaction.wallet_address,
         amount=transaction.amount,
         tx_hash=transaction.tx_hash,

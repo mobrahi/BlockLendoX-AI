@@ -21,6 +21,7 @@ class UserResponse(UserBase):
 # --- LOAN REQUEST SCHEMA ---
 # Moved here from main.py to keep things organized
 class LoanRequest(BaseModel):
+    user_id: int  # <--- NEW FIELD
     income: float
     debt: float
     wallet: str
@@ -32,6 +33,7 @@ class TransactionBase(BaseModel):
     amount: float
 
 class TransactionCreate(TransactionBase):
+    user_id: int  # <--- NEW FIELD
     tx_hash: str
     status: str
 
