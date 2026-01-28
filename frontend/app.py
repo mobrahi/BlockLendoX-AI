@@ -186,58 +186,71 @@ with tab_borrow:
         else:
             st.warning("Data missing required columns.")
 
-
-    # --- HISTORY & REPAYMENT SECTION ---
-    # st.divider()
-    # st.subheader("📜 Transaction History")
-    
-    # if not df.empty:
-    #     # 1. Display Table (Visual Copy only)
-    #     display_cols = ['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
-    #     valid_cols = [c for c in display_cols if c in df.columns]
-    #     st.dataframe(df[valid_cols], width="stretch", hide_index=True)
-        
-    #     # 2. Repayment Console
-    #     st.divider()
-    #     st.subheader("💸 Repayment Console")
-        
-    #     # Check if we have the necessary columns for logic
-    #     if 'status' in df.columns and 'id' in df.columns:
-    #         # Filter for active loans
-    #         active_loans = df[df['status'] == "Approved"]
-            
-    #         if not active_loans.empty:
-    #             # Create dropdown string
-    #             loan_options = active_loans.apply(
-    #                 lambda x: f"ID: {x['id']} | {x['amount']} ETH | {x['timestamp']}", axis=1
-    #             )
-    #             selected_loan_str = st.selectbox("Select Loan to Repay", loan_options)
-                
-    #             if st.button("Mark as Repaid"):
-    #                 # Extract ID safely
-    #                 loan_id = int(selected_loan_str.split("|")[0].replace("ID:", "").strip())
-                    
-    #                 try:
-    #                     res = requests.put(f"http://127.0.0.1:8000/transaction/{loan_id}", json={"status": "Repaid"})
-    #                     if res.status_code == 200:
-    #                         st.success("Repayment Successful!")
-    #                         st.balloons()
-    #                         time.sleep(1.5)
-    #                         st.cache_data.clear() # Clear cache to update UI
-    #                         st.rerun()
-    #                     else:
-    #                         st.error("Update failed.")
-    #                 except Exception as e:
-    #                     st.error(f"Error: {e}")
-    #         else:
-    #             st.info("No active loans to repay. You are debt-free! 🎉")
-    #     else:
-    #         st.warning("Data missing required columns.")
-    # else:
-    #     st.info("No transactions found yet.")
-
 # --- LENDER TAB ---
 with tab_lend:
     st.header("Lender Dashboard")
-    st.write("Deposit ETH to provide liquidity and earn interest.")
-    st.info("Coming soon in Phase 2!")
+    st.markdown("Provide liquidity to the protocol and earn passive APY.")
+    
+    # 1. FETCH REAL POOL DATA
+    pool_balance = 0.0
+    pool_address = "Loading..."
+    
+    try:
+        # Call the new endpoint
+        pool_res = requests.get("http://127.0.0.1:8000/pool-balance", timeout=2)
+        if pool_res.status_code == 200:
+            pool_data = pool_res.json()
+            pool_balance = pool_data.get("balance", 0.0)
+            pool_address = pool_data.get("admin_address", "Unknown")
+    except:
+        pass
+
+    # 2. METRICS ROW
+    l_col1, l_col2, l_col3 = st.columns(3)
+    l_col1.metric("Total Pool Liquidity", f"{pool_balance:.4f} ETH")
+    l_col2.metric("Current APY", "12.5%", "+0.5%")
+    l_col3.metric("Total Lenders", "4") # Mock or fetch from DB count
+
+    st.divider()
+
+    # 3. DEPOSIT INTERFACE
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.subheader("💰 Add Liquidity")
+        lender_wallet = st.text_input("Lender Wallet Address", placeholder="0x...", key="lend_wallet").strip()
+        deposit_amount = st.number_input("Amount to Deposit (ETH)", min_value=0.1, key="lend_amount")
+        
+        if st.button("Confirm Deposit", type="primary"):
+            if not Web3.is_address(lender_wallet):
+                st.error("Invalid Wallet Address")
+            else:
+                payload = {
+                    "wallet": Web3.to_checksum_address(lender_wallet),
+                    "amount": deposit_amount
+                }
+                
+                try:
+                    res = requests.post("http://127.0.0.1:8000/deposit", json=payload)
+                    if res.status_code == 200:
+                        st.success(f"Successfully staked {deposit_amount} ETH!")
+                        st.balloons()
+                        time.sleep(1)
+                        st.cache_data.clear() # Refresh stats
+                        st.rerun()
+                    else:
+                        st.error("Deposit failed.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    with c2:
+        st.subheader("📊 Your Staking History")
+        # Filter dataframe for "Liquidity Added" status
+        if not df.empty and 'status' in df.columns:
+            deposits = df[df['status'] == "Liquidity Added"]
+            if not deposits.empty:
+                st.dataframe(deposits[['timestamp', 'amount', 'wallet_address']], width="stretch", hide_index=True)
+            else:
+                st.info("No active deposits found.")
+        else:
+            st.info("Connect wallet to view history.")

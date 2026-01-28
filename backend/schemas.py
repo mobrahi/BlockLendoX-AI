@@ -47,3 +47,8 @@ class TransactionResponse(TransactionBase):
 
     class Config:
         from_attributes = True
+
+# --- DEPOSIT REQUEST SCHEMA ---
+class DepositRequest(BaseModel):
+    wallet: str
+    amount: float
