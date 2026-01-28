@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import time
 from web3 import Web3
 
 # 1. Configuration & Setup
@@ -162,6 +163,8 @@ with tab_borrow:
                         res = requests.put(f"http://127.0.0.1:8000/transaction/{loan_id}", json={"status": "Repaid"})
                         if res.status_code == 200:
                             st.success("Repayment Successful!")
+                            st.balloons()
+                            time.sleep(1.5)
                             st.cache_data.clear() # Clear cache to update UI
                             st.rerun()
                         else:
