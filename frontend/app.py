@@ -303,14 +303,14 @@ with tab_stats:
                 })
                 fig_pie = px.pie(pie_data, values='Amount', names='Status', hole=0.5,
                                 color_discrete_sequence=['#00D4FF', '#FF4B4B'])
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
 
             with c2:
                 st.write("### 🏆 Borrower Activity")
                 if not u_df.empty and u_df['borrowed'].sum() > 0:
                     fig_b = px.bar(u_df[u_df['borrowed'] > 0], x='borrowed', y='name', 
                                   orientation='h', color='borrowed', color_continuous_scale='Reds')
-                    st.plotly_chart(fig_b, use_container_width=True)
+                    st.plotly_chart(fig_b, width="stretch")
                 else:
                     st.info("No borrowing activity recorded.")
 
@@ -328,7 +328,7 @@ with tab_stats:
                     "borrowed": "Total Borrowed (ETH)",
                     "lent": "Total Lent (ETH)"
                 })
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                st.dataframe(display_df, width="stretch", hide_index=True)
             else:
                 st.info("No users registered in the system.")
 
@@ -338,7 +338,7 @@ with tab_stats:
                 st.write("### 💰 Liquidity Provider Rankings")
                 fig_l = px.bar(u_df[u_df['lent'] > 0], x='lent', y='name', 
                               orientation='h', color='lent', color_continuous_scale='Greens')
-                st.plotly_chart(fig_l, use_container_width=True)
+                st.plotly_chart(fig_l, width="stretch")
 
         else:
             st.error("Backend Error: Could not load summary.")

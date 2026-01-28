@@ -1,11 +1,12 @@
 import joblib
 import os
 from pathlib import Path
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Security # Import Security as well
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 from web3 import Web3
 from pydantic import BaseModel
+from fastapi.security import APIKeyHeader
 
 # Internal Imports
 from .database import get_db, engine
@@ -16,6 +17,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request 
 from .schemas import LoanRequest, DepositRequest
+
+# This creates the "Authorize" button in Swagger
+api_key_header = APIKeyHeader(name="X-Admin-Password", auto_error=False)
+
+def validate_admin(api_key: str = Security(api_key_header), settings=Depends(get_settings)):
+    if api_key != settings.admin_password:
+        raise HTTPException(
+            status_code=403, 
+            detail="Unauthorized: Invalid Admin Password"
+        )
+    return True
 
 # --- SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -317,13 +329,12 @@ def update_loan_status(tx_id: int, update_data: schemas.TransactionUpdate, db: S
 
     return updated_tx
 
-@app.delete("/transaction/{tx_id}")
-def delete_loan_record(tx_id: int, db: Session = Depends(database.get_db)):
-    """Delete a transaction log (Admin only)"""
+@app.delete("/transaction/{tx_id}", dependencies=[Depends(validate_admin)])
+def delete_loan_record(tx_id: int, db: Session = Depends(get_db)):
     success = crud.delete_transaction(db, tx_id)
     if not success:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return {"status": "success", "message": f"Transaction {tx_id} deleted"}
+    return {"status": "success", "message": "Record archived"}
 
 # --- NEW: POOL BALANCE ENDPOINT ---
 @app.get("/pool-balance")
@@ -428,9 +439,8 @@ def get_protocol_summary(db: Session = Depends(get_db)):
         "users": user_list
     }
 
-@app.get("/admin/archived", response_model=list[schemas.TransactionResponse])
+@app.get("/admin/archived", dependencies=[Depends(validate_admin)])
 def get_archived(db: Session = Depends(get_db)):
-    """Fetch only soft-deleted/archived transactions"""
     return db.query(models.Transaction).filter(models.Transaction.status == "Archived").all()
 
 @app.post("/admin/verify")
