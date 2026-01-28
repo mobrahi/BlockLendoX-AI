@@ -136,19 +136,25 @@ with tab_borrow:
     st.divider()
     
     # 1. Transaction History (Collapsible)
-    # expanded=False means it starts closed (cleaner look)
     with st.expander("📜 View Transaction History", expanded=False):
         if not df.empty:
-            # Add a Refresh button inside the dropdown
+            # Add a Refresh button
             if st.button("🔄 Refresh Data", key="refresh_hist"):
                 st.cache_data.clear()
                 st.rerun()
                 
-            display_cols = ['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
+            # --- UPDATED LIST: Added 'id' at the beginning ---
+            display_cols = ['id', 'timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
             valid_cols = [c for c in display_cols if c in df.columns]
             
-            # Use the new width parameter
-            st.dataframe(df[valid_cols], width="stretch", hide_index=True)
+            # Create a clean display version
+            display_df = df[valid_cols].copy()
+            
+            # Rename for professional look
+            display_df.rename(columns={'id': 'ID'}, inplace=True)
+            
+            # Display the table
+            st.dataframe(display_df, width="stretch", hide_index=True)
         else:
             st.info("No transactions found yet.")
 
@@ -263,77 +269,75 @@ with tab_lend:
 
 # --- ANALYTICS TAB (UPGRADED WITH PLOTLY) ---
 with tab_stats:
-    st.header("Protocol Analytics Dashboard")
+    st.header("📊 Protocol Intelligence Dashboard")
     
-    res = requests.get("http://localhost:8000/analytics/summary")
-    if res.status_code == 200:
-        data = res.json()
-        
-        # --- 1. Top Level Metrics ---
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Loaned", f"{data['protocol_total_loaned']:.2f} ETH")
-        m2.metric("Total Repaid", f"{data['protocol_total_repaid']:.2f} ETH")
-        
-        # Calculate "Money in Flight"
-        outstanding = data['protocol_total_loaned'] - data['protocol_total_repaid']
-        m3.metric("Outstanding Debt", f"{outstanding:.2f} ETH", delta_color="inverse")
+    try:
+        res = requests.get("http://localhost:8000/analytics/summary", timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            m = data['metrics']
+            users = data['users']
+            u_df = pd.DataFrame(users)
 
-        st.divider()
+            # --- ROW 1: METRICS ---
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            col_m1.metric("Available Pool", f"{m['current_pool']:.2f} ETH")
+            col_m2.metric("Total Staked", f"{m['total_staked']:.2f} ETH")
+            col_m3.metric("Out on Loan", f"{m['out_on_loan']:.2f} ETH")
+            col_m4.metric("Total Repaid", f"{m['total_repaid']:.2f} ETH")
 
-        col1, col2 = st.columns(2)
+            st.divider()
 
-        # --- 2. Chart: Loan vs Repayment (Interactive Pie Chart) ---
-        with col1:
-            st.write("### 🍰 Capital Distribution")
-            pie_df = pd.DataFrame({
-                'Status': ['Loaned (Out)', 'Repaid (In)'],
-                'Amount': [data['protocol_total_loaned'], data['protocol_total_repaid']]
-            })
-            
-            # Using Plotly Express for a clean donut chart
-            fig_pie = px.pie(
-                pie_df, 
-                values='Amount', 
-                names='Status', 
-                hole=0.4,
-                color_discrete_sequence=['#FF4B4B', '#00D4FF'] # Red for out, Blue for in
-            )
-            fig_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
-            st.plotly_chart(fig_pie, use_container_width=True)
+            # --- ROW 2: CHARTS ---
+            c1, c2 = st.columns(2)
 
-        # --- 3. Chart: User Borrowing (Horizontal Bar Chart) ---
-        with col2:
-            st.write("### 🏆 Top Borrowers")
-            if data['user_breakdown']:
-                user_df = pd.DataFrame(data['user_breakdown'])
-                
-                # Plotly Horizontal Bar
-                fig_bar = px.bar(
-                    user_df, 
-                    x='borrowed', 
-                    y='name', 
-                    orientation='h',
-                    labels={'borrowed': 'Total Borrowed (ETH)', 'name': 'Borrower Name'},
-                    color='borrowed',
-                    color_continuous_scale='Blues'
-                )
-                fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(t=0, b=0, l=0, r=0))
-                st.plotly_chart(fig_bar, use_container_width=True)
+            with c1:
+                st.write("### 🏦 Capital Allocation")
+                # Force chart to show even if values are small
+                pie_data = pd.DataFrame({
+                    'Status': ['In Pool', 'Active Loans'],
+                    'Amount': [max(m['current_pool'], 0.001), max(m['out_on_loan'], 0.001)]
+                })
+                fig_pie = px.pie(pie_data, values='Amount', names='Status', hole=0.5,
+                                color_discrete_sequence=['#00D4FF', '#FF4B4B'])
+                st.plotly_chart(fig_pie, use_container_width=True)
 
-        st.divider()
+            with c2:
+                st.write("### 🏆 Borrower Activity")
+                if not u_df.empty and u_df['borrowed'].sum() > 0:
+                    fig_b = px.bar(u_df[u_df['borrowed'] > 0], x='borrowed', y='name', 
+                                  orientation='h', color='borrowed', color_continuous_scale='Reds')
+                    st.plotly_chart(fig_b, use_container_width=True)
+                else:
+                    st.info("No borrowing activity recorded.")
 
-        # --- 4. User Summary Table (The "Leaderboard") ---
-        st.write("### 👥 Borrower Detailed Leaderboard")
-        if data['user_breakdown']:
-            summary_df = pd.DataFrame(data['user_breakdown'])
-            summary_df.columns = ["Borrower Name", "User ID", "Total Borrowed (ETH)", "No. of Loans"]
-            
-            # Style the table to highlight high borrowers
-            st.dataframe(
-                summary_df.style.background_gradient(subset=["Total Borrowed (ETH)"], cmap="Blues"),
-                use_container_width=True
-            )
+            st.divider()
+
+            # --- ROW 3: MASTER USER TABLE ---
+            st.write("### 👥 Master User Directory & Financial Summary")
+            if not u_df.empty:
+                # Rename columns for professional display
+                display_df = u_df.rename(columns={
+                    "id": "User ID",
+                    "name": "Full Name",
+                    "income": "Annual Income",
+                    "score": "Credit Score",
+                    "borrowed": "Total Borrowed (ETH)",
+                    "lent": "Total Lent (ETH)"
+                })
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No users registered in the system.")
+
+            # --- ROW 4: LENDER CHART ---
+            if not u_df.empty and u_df['lent'].sum() > 0:
+                st.divider()
+                st.write("### 💰 Liquidity Provider Rankings")
+                fig_l = px.bar(u_df[u_df['lent'] > 0], x='lent', y='name', 
+                              orientation='h', color='lent', color_continuous_scale='Greens')
+                st.plotly_chart(fig_l, use_container_width=True)
+
         else:
-            st.info("No active loan data to display.")
-    else:
-        st.error("Could not fetch analytics.")
+            st.error("Backend Error: Could not load summary.")
+    except Exception as e:
+        st.error(f"UI Error: {e}")
