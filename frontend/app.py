@@ -109,7 +109,6 @@ with tab_borrow:
                     if res.status_code == 200:
                         result = res.json()
                         
-                        # --- THE FIX IS HERE ---
                         # Check the actual logical status, not just HTTP 200
                         if result.get("status") == "Approved":
                             st.success(f"✅ Approved! Funds sent to {final_wallet[:10]}...")
@@ -129,54 +128,113 @@ with tab_borrow:
                 except Exception as e:
                     st.error(f"Connection Error: {e}")
 
-    # --- HISTORY & REPAYMENT SECTION ---
+    # --- IMPROVED HISTORY & REPAYMENT UI ---
     st.divider()
-    st.subheader("📜 Transaction History")
     
-    if not df.empty:
-        # 1. Display Table (Visual Copy only)
-        display_cols = ['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
-        valid_cols = [c for c in display_cols if c in df.columns]
-        st.dataframe(df[valid_cols], width="stretch", hide_index=True)
-        
-        # 2. Repayment Console
-        st.divider()
-        st.subheader("💸 Repayment Console")
-        
-        # Check if we have the necessary columns for logic
-        if 'status' in df.columns and 'id' in df.columns:
+    # 1. Transaction History (Collapsible)
+    # expanded=False means it starts closed (cleaner look)
+    with st.expander("📜 View Transaction History", expanded=False):
+        if not df.empty:
+            # Add a Refresh button inside the dropdown
+            if st.button("🔄 Refresh Data", key="refresh_hist"):
+                st.cache_data.clear()
+                st.rerun()
+                
+            display_cols = ['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
+            valid_cols = [c for c in display_cols if c in df.columns]
+            
+            # Use the new width parameter
+            st.dataframe(df[valid_cols], width="stretch", hide_index=True)
+        else:
+            st.info("No transactions found yet.")
+
+    # 2. Repayment Console (Collapsible)
+    with st.expander("💸 Open Repayment Console", expanded=False):
+        if not df.empty and 'status' in df.columns and 'id' in df.columns:
             # Filter for active loans
             active_loans = df[df['status'] == "Approved"]
             
             if not active_loans.empty:
+                st.write("Select a loan to pay back:")
+                
                 # Create dropdown string
                 loan_options = active_loans.apply(
                     lambda x: f"ID: {x['id']} | {x['amount']} ETH | {x['timestamp']}", axis=1
                 )
-                selected_loan_str = st.selectbox("Select Loan to Repay", loan_options)
+                selected_loan_str = st.selectbox("Active Loans", loan_options, label_visibility="collapsed")
                 
-                if st.button("Mark as Repaid"):
-                    # Extract ID safely
+                # Extract ID safely
+                if selected_loan_str:
                     loan_id = int(selected_loan_str.split("|")[0].replace("ID:", "").strip())
                     
-                    try:
-                        res = requests.put(f"http://127.0.0.1:8000/transaction/{loan_id}", json={"status": "Repaid"})
-                        if res.status_code == 200:
-                            st.success("Repayment Successful!")
-                            st.balloons()
-                            time.sleep(1.5)
-                            st.cache_data.clear() # Clear cache to update UI
-                            st.rerun()
-                        else:
-                            st.error("Update failed.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                    # 'type="primary"' turns the button RED/THEME COLOR (makes it pop!)
+                    if st.button(f"Mark Loan #{loan_id} as Repaid", type="primary"):
+                        try:
+                            res = requests.put(f"http://127.0.0.1:8000/transaction/{loan_id}", json={"status": "Repaid"})
+                            if res.status_code == 200:
+                                st.success("Repayment Successful!")
+                                st.balloons()
+                                time.sleep(1.5) # Wait for animation
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("Update failed.")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
             else:
-                st.info("No active loans to repay. You are debt-free! 🎉")
+                st.success("🎉 You have no active loans to repay!")
         else:
             st.warning("Data missing required columns.")
-    else:
-        st.info("No transactions found yet.")
+
+
+    # --- HISTORY & REPAYMENT SECTION ---
+    # st.divider()
+    # st.subheader("📜 Transaction History")
+    
+    # if not df.empty:
+    #     # 1. Display Table (Visual Copy only)
+    #     display_cols = ['timestamp', 'wallet_address', 'amount', 'status', 'tx_hash']
+    #     valid_cols = [c for c in display_cols if c in df.columns]
+    #     st.dataframe(df[valid_cols], width="stretch", hide_index=True)
+        
+    #     # 2. Repayment Console
+    #     st.divider()
+    #     st.subheader("💸 Repayment Console")
+        
+    #     # Check if we have the necessary columns for logic
+    #     if 'status' in df.columns and 'id' in df.columns:
+    #         # Filter for active loans
+    #         active_loans = df[df['status'] == "Approved"]
+            
+    #         if not active_loans.empty:
+    #             # Create dropdown string
+    #             loan_options = active_loans.apply(
+    #                 lambda x: f"ID: {x['id']} | {x['amount']} ETH | {x['timestamp']}", axis=1
+    #             )
+    #             selected_loan_str = st.selectbox("Select Loan to Repay", loan_options)
+                
+    #             if st.button("Mark as Repaid"):
+    #                 # Extract ID safely
+    #                 loan_id = int(selected_loan_str.split("|")[0].replace("ID:", "").strip())
+                    
+    #                 try:
+    #                     res = requests.put(f"http://127.0.0.1:8000/transaction/{loan_id}", json={"status": "Repaid"})
+    #                     if res.status_code == 200:
+    #                         st.success("Repayment Successful!")
+    #                         st.balloons()
+    #                         time.sleep(1.5)
+    #                         st.cache_data.clear() # Clear cache to update UI
+    #                         st.rerun()
+    #                     else:
+    #                         st.error("Update failed.")
+    #                 except Exception as e:
+    #                     st.error(f"Error: {e}")
+    #         else:
+    #             st.info("No active loans to repay. You are debt-free! 🎉")
+    #     else:
+    #         st.warning("Data missing required columns.")
+    # else:
+    #     st.info("No transactions found yet.")
 
 # --- LENDER TAB ---
 with tab_lend:
