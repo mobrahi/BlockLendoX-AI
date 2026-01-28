@@ -222,6 +222,7 @@ with tab_lend:
     
     with c1:
         st.subheader("💰 Add Liquidity")
+        lender_user_id = st.number_input("Your User ID", min_value=1, value=1, key="lender_id")
         lender_wallet = st.text_input("Lender Wallet Address", placeholder="0x...", key="lend_wallet").strip()
         deposit_amount = st.number_input("Amount to Deposit (ETH)", min_value=0.1, key="lend_amount")
         
@@ -230,6 +231,7 @@ with tab_lend:
                 st.error("Invalid Wallet Address")
             else:
                 payload = {
+                    "user_id": lender_user_id,
                     "wallet": Web3.to_checksum_address(lender_wallet),
                     "amount": deposit_amount
                 }

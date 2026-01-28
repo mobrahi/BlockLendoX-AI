@@ -52,5 +52,6 @@ class TransactionResponse(TransactionBase):
 
 # --- DEPOSIT REQUEST SCHEMA ---
 class DepositRequest(BaseModel):
+    user_id: int
     wallet: str
     amount: float

@@ -344,41 +344,39 @@ def get_pool_balance(settings=Depends(get_settings)):
         return {"balance": 0.0, "error": str(e)}
 
 # --- NEW: DEPOSIT ENDPOINT ---
-
 @app.post("/deposit")
 def deposit_liquidity(
     request: schemas.DepositRequest, 
     db: Session = Depends(get_db)
 ):
-    # 1. Sanitize Input
     clean_wallet = request.wallet.strip().replace("\ufeff", "")
-    print(f"💰 Deposit Request: {clean_wallet} | {request.amount} ETH")
     
-    # 2. Create Mock Hash (Since we don't sign deposits on backend)
+    # 1. Verify User Exists (Optional but recommended)
+    user = crud.get_user(db, request.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User ID not found. Please register first.")
+
     mock_hash = f"0xDEPOSIT_{clean_wallet[:4]}_{request.amount}"
     
     try:
-        # 3. Create the Schema Object (The Fix!)
-        # We must bundle the data into the Pydantic model expected by crud.py
+        # 2. Bundle the user_id into the schema
         deposit_tx = schemas.TransactionCreate(
+            user_id=request.user_id, # <--- Link to user!
             wallet_address=clean_wallet,
             amount=request.amount,
             tx_hash=mock_hash,
             status="Liquidity Added"
         )
 
-        # 4. Pass the SINGLE object to CRUD
-        crud.create_transaction(db, deposit_tx)
+        # 3. Pass to CRUD
+        crud.create_transaction(db, deposit_tx, user_id=request.user_id)
         
         return {"status": "Success", "message": "Liquidity recorded in ledger"}
-
     except Exception as e:
-        print(f"🔥 Deposit Error: {e}") # Print error to terminal for debugging
+        print(f"🔥 Deposit Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- NEW: ANALYTICS ENDPOINT ---
-from sqlalchemy import func # Add to imports
-
 @app.get("/analytics/summary")
 def get_loan_summary(db: Session = Depends(get_db)):
     # 1. Overall Protocol Stats
