@@ -115,15 +115,24 @@ def get_chain_info(settings=Depends(get_settings)):
     }
 
 @app.post("/request-loan")
-async def request_loan(
-    request: schemas.LoanRequest, 
+async def request_loan(request: schemas.LoanRequest, 
     db: Session = Depends(get_db), 
     settings=Depends(get_settings)
-):
-    # 1. Fetch User (The Source of Truth)
+):  
+    # 1. Fetch User Profile
     user = crud.get_user(db, request.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # 1. --- NEW: HARD GUARDRAIL (Business Logic) ---
+    # Rule: Loan cannot be more than 5x the monthly income
+    max_loan_limit = user.income * 5 
+    if request.amount > max_loan_limit:
+        print(f"🛑 Hard Guardrail: Loan {request.amount} exceeds limit {max_loan_limit}")
+        return {
+            "status": "Rejected", 
+            "reason": f"Loan amount (${request.amount}) is too high for your income level."
+        }
 
     # 2. Logic Shift: Use the INCOME from the Database, not the form!
     db_income = user.income
@@ -133,10 +142,14 @@ async def request_loan(
     clean_wallet = request.wallet.strip().replace("\ufeff", "")
 
     try:
-        # STEP 1: AI Prediction (Now using db_income!)
-        # We pass db_income instead of request.income
-        prediction = ml_model.predict([[db_income, request.debt, 750]])[0]
-        
+        # We now pass 4 values to match the new model
+        prediction = ml_model.predict([[
+            user.income, 
+            request.debt, 
+            request.amount, # Pass the requested loan amount!
+            user.credit_score
+        ]])[0]
+
         if prediction == 0:
             return {"status": "Rejected", "reason": "AI flagged risk based on PROFILE income."}
 
@@ -254,12 +267,24 @@ def read_history(db: Session = Depends(get_db)):
 
 # Profile/Signup Routes
 @app.post("/signup", response_model=schemas.UserResponse)
-def signup(
-    user: schemas.UserCreate,  # <--- Now expects JSON matching the schema
-    db: Session = Depends(get_db)
-):
-    # Pass the SINGLE schema object to CRUD
-    return crud.create_user(db=db, user=user)
+def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    # --- NEW: Starter Score Logic ---
+    # We give a base score so they aren't stuck at 0.
+    # High income gets a better head start.
+    # Calculate starter score
+    starter_score = 610 if user.income >= 3000 else 580
+    
+    # Create user with the calculated starter score
+    db_user = models.User(
+        full_name=user.full_name,
+        email=user.email,
+        income=user.income,
+        credit_score=starter_score # Set the starter score here
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
 
 @app.get("/profile/{user_id}")
 def view_profile(user_id: int, db: Session = Depends(get_db)):
@@ -272,11 +297,23 @@ def view_profile(user_id: int, db: Session = Depends(get_db)):
 # --- NEW: UPDATE & DELETE ROUTES ---
 
 @app.put("/transaction/{tx_id}", response_model=schemas.TransactionResponse)
-def update_loan_status(tx_id: int, update_data: schemas.TransactionUpdate, db: Session = Depends(database.get_db)):
-    """Update a loan status (e.g. to 'Repaid')"""
+def update_loan_status(tx_id: int, update_data: schemas.TransactionUpdate, db: Session = Depends(get_db)):
+    # 1. Update the Transaction Status
     updated_tx = crud.update_transaction_status(db, tx_id, update_data.status)
     if not updated_tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # 2. --- NEW: Credit Builder Logic ---
+    # If the loan was successfully repaid, boost the user's score!
+    if update_data.status == "Repaid":
+        user = crud.get_user(db, updated_tx.user_id)
+        if user:
+            # Increase score by 25 points, but cap it at 850 (max credit score)
+            new_score = min(user.credit_score + 25, 850)
+            user.credit_score = new_score
+            db.commit()
+            print(f"📈 Credit Boost! {user.full_name} now has a score of {new_score}")
+
     return updated_tx
 
 @app.delete("/transaction/{tx_id}")

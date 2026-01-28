@@ -9,7 +9,7 @@ class UserBase(BaseModel):
     income: float
 
 class UserCreate(UserBase):
-    pass
+    pass # We don't want to ask the user for their score!
 
 class UserResponse(UserBase):
     id: int
