@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from web3 import Web3
 from pydantic import BaseModel
 
@@ -378,29 +378,52 @@ def deposit_liquidity(
 
 # --- NEW: ANALYTICS ENDPOINT ---
 @app.get("/analytics/summary")
-def get_loan_summary(db: Session = Depends(get_db)):
-    # 1. Overall Protocol Stats
-    total_loaned = db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Approved").scalar() or 0
-    total_repaid = db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Repaid").scalar() or 0
+def get_protocol_summary(db: Session = Depends(get_db)):
+    # 1. CALCULATE GLOBAL METRICS
+    total_staked = float(db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Liquidity Added").scalar() or 0)
+    total_approved = float(db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Approved").scalar() or 0)
+    total_repaid = float(db.query(func.sum(models.Transaction.amount)).filter(models.Transaction.status == "Repaid").scalar() or 0)
     
-    # 2. Per-User Summary (The "Summary Table" logic)
-    user_summaries = db.query(
+    # Logic: Out on Loan is what was approved but not yet repaid
+    out_on_loan = max(total_approved - total_repaid, 0)
+    # Logic: Current Pool is Staked minus what is currently out
+    current_pool = max(total_staked - out_on_loan, 0)
+
+    metrics_data = {
+        "total_staked": total_staked,
+        "total_repaid": total_repaid,
+        "out_on_loan": out_on_loan,
+        "current_pool": current_pool
+    }
+
+    # 2. MASTER USER TABLE (With Repayment Column)
+    master_query = db.query(
+        models.User.id,
         models.User.full_name,
-        models.User.id.label("user_id"),
-        func.sum(models.Transaction.amount).label("total_borrowed"),
-        func.count(models.Transaction.id).label("loan_count")
-    ).join(models.Transaction, models.User.id == models.Transaction.user_id)\
-     .filter(models.Transaction.status == "Approved")\
-     .group_by(models.User.id).all()
+        models.User.income,
+        models.User.credit_score,
+        # Total Borrowed (Historical: Approved + Repaid)
+        func.sum(case((models.Transaction.status.in_(["Approved", "Repaid"]), models.Transaction.amount), else_=0)).label("total_borrowed"),
+        # Total Repaid (Only Repaid)
+        func.sum(case((models.Transaction.status == "Repaid", models.Transaction.amount), else_=0)).label("total_repaid"),
+        # Total Lent (Liquidity Added)
+        func.sum(case((models.Transaction.status == "Liquidity Added", models.Transaction.amount), else_=0)).label("total_lent")
+    ).outerjoin(models.Transaction).group_by(models.User.id).all()
 
-    # Convert to list of dicts for JSON
-    user_data = [
-        {"name": row.full_name, "id": row.user_id, "borrowed": row.total_borrowed, "loans": row.loan_count}
-        for row in user_summaries
-    ]
+    user_list = []
+    for r in master_query:
+        user_list.append({
+            "id": r.id,
+            "name": r.full_name,
+            "income": r.income,
+            "score": r.credit_score,
+            "borrowed": float(r.total_borrowed),
+            "repaid": float(r.total_repaid),
+            "lent": float(r.total_lent)
+        })
 
+    # 3. RETURN COMBINED DATA
     return {
-        "protocol_total_loaned": total_loaned,
-        "protocol_total_repaid": total_repaid,
-        "user_breakdown": user_data
+        "metrics": metrics_data,
+        "users": user_list
     }
