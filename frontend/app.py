@@ -6,6 +6,9 @@ import plotly.express as px
 import matplotlib.pyplot as plt
 from web3 import Web3
 
+if 'admin_authenticated' not in st.session_state:
+    st.session_state.admin_authenticated = False
+
 # 1. Configuration & Setup
 st.set_page_config(page_title="BlockLendoX-AI", layout="wide")
 
@@ -342,29 +345,80 @@ with tab_stats:
     except Exception as e:
         st.error(f"UI Error: {e}")
 
-
 # --- ADMIN PORTAL TAB ---
 with tab_admin:
-    st.header("Security & Audit Portal")
-    
-    admin_password_input = st.text_input("Enter Admin Credentials", type="password")
-    
-    if admin_password_input:
-        # Ask the Backend to verify (The Secure Way)
+    st.header("🔐 Security & Audit Portal")
+
+    # 1. CHECK IF NOT LOGGED IN
+    if not st.session_state.get('admin_authenticated', False):
+        st.info("Please authenticate to view sensitive protocol logs.")
+        admin_password_input = st.text_input("Enter Admin Credentials", type="password", key="admin_pass_login")
+        
+        if st.button("Unlock Portal"):
+            try:
+                verify_res = requests.post(
+                    "http://127.0.0.1:8000/admin/verify", 
+                    json={"password": admin_password_input}
+                )
+                
+                if verify_res.status_code == 200 and verify_res.json().get("verified"):
+                    st.session_state.admin_authenticated = True
+                    st.success("Access Granted!")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("Invalid Admin Password")
+            except Exception as e:
+                st.error(f"Backend Offline: {e}")
+
+    # 2. IF LOGGED IN (Show the Dashboard)
+    else:
+        st.success("Admin Session Active")
+        
+        # Logout Button at the top
+        if st.button("🔒 Lock Portal & Logout"):
+            st.session_state.admin_authenticated = False
+            st.rerun()
+
+        st.divider()
+        st.subheader("🗑️ Archived Transactions (Audit Trail)")
+        st.write("Below are records marked as 'Archived'. These are excluded from standard analytics.")
+
+        # --- DATA FETCHING (Only runs if authenticated) ---
         try:
-            verify_res = requests.post(
-                "http://127.0.0.1:8000/admin/verify", 
-                json={"password": admin_password_input}
-            )
-            
-            if verify_res.status_code == 200 and verify_res.json().get("verified"):
-                st.success("Access Granted")
+            archived_res = requests.get("http://127.0.0.1:8000/admin/archived")
+            if archived_res.status_code == 200:
+                archived_data = archived_res.json()
                 
-                # --- YOUR ADMIN CODE HERE ---
-                st.subheader("🗑️ Archived Transactions")
-                # (Keep the rest of your archived data fetching logic here)
-                
-            else:
-                st.error("Invalid Admin Password")
+                if archived_data:
+                    # Convert to DataFrame
+                    a_df = pd.DataFrame(archived_data)
+                    
+                    # Rename columns for clarity
+                    a_df.rename(columns={'id': 'Loan ID', 'wallet_address': 'Wallet', 'amount': 'Amount (ETH)'}, inplace=True)
+                    
+                    # Display Table
+                    st.dataframe(a_df[['Loan ID', 'timestamp', 'Wallet', 'Amount (ETH)', 'status']], width="stretch", hide_index=True)
+
+                    # --- RESTORE TOOL ---
+                    st.divider()
+                    st.subheader("🛠️ Administrative Tools")
+                    restore_id = st.number_input("Enter Loan ID to Restore", min_value=1, step=1)
+                    
+                    if st.button("✅ Restore Transaction to Active Ledger", type="primary"):
+                        restore_res = requests.put(
+                            f"http://127.0.0.1:8000/transaction/{restore_id}", 
+                            json={"status": "Approved"}
+                        )
+                        if restore_res.status_code == 200:
+                            st.success(f"Transaction #{restore_id} has been restored!")
+                            st.balloons()
+                            time.sleep(1)
+                            st.cache_data.clear() # Clear cache so history updates
+                            st.rerun()
+                        else:
+                            st.error("Restore failed. Verify the Loan ID.")
+                else:
+                    st.info("No archived records found in the database.")
         except Exception as e:
-            st.error(f"Security Engine Offline: {e}")
+            st.error(f"Error fetching archive: {e}")
