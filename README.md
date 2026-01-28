@@ -2,29 +2,22 @@
 ---
 
 # 🏦 BlockLendoX-AI
+> **DeFi Micro-Lending Platform powered by Machine Learning**
 
-**AI-Powered Decentralized Micro-Lending Platform**
+BlockLendoX-AI bridges the gap between traditional credit scoring and decentralized finance. It uses an AI model to assess borrower risk off-chain and executes loan agreements on-chain via Ethereum Smart Contracts.
 
-BlockLendoX-AI is a next-generation FinTech application that bridges the gap between traditional credit scoring and decentralized finance (DeFi). By leveraging **Machine Learning** for risk assessment and **Ethereum Smart Contracts** for automated fund disbursement, it provides a trustless lending ecosystem.
-
----
-
-## 🚀 Features
-
-* **AI-Driven Credit Scoring:** Uses a Random Forest model to analyze income, debt, and behavioral data to predict default risk.
-* **Smart Contract Escrow:** Automated loan disbursement and repayment tracking via Solidity.
-* **Off-Chain CRUD Management:** SQLite database manages user profiles and KYC data for fast retrieval and compliance.
-* **Real-time Dashboard:** Streamlit interface for seamless user interaction and transaction monitoring.
+## 🚀 Key Features
+- **AI Credit Scoring:** Random Forest model evaluates Income, Debt, and History to predict default risk.
+- **Trustless Execution:** Approved loans automatically trigger ETH transfers via Web3.py.
+- **Data Persistence:** SQLite database tracks all transaction history (CRUD).
+- **Interactive Dashboard:** Streamlit UI with real-time metrics, caching, and repayment console.
 
 ## 🛠️ Tech Stack
-
-| Component | Technology |
-| --- | --- |
-| **Frontend** | Streamlit |
-| **Backend** | FastAPI |
-| **AI/ML** | Scikit-Learn, Joblib |
-| **Blockchain** | Solidity, Web3.py, Ganache (Local Testnet) |
-| **Database** | SQLite, SQLAlchemy (CRUD operations) |
+- **Frontend:** Streamlit (Python)
+- **Backend:** FastAPI, Pydantic, SQLAlchemy
+- **Blockchain:** Web3.py, Ganache (Local Ethereum Testnet)
+- **AI/ML:** Scikit-Learn, Pandas, Joblib
+- **Database:** SQLite
 
 ---
 
@@ -48,7 +41,7 @@ pip install -r requirements.txt
 3. **Environment Configuration:**
 Create a `.env` file in the root directory:
 ```env
-RPC_URL=http://127.0.0.1:7545
+RPC_URL=http://127.0.0.1:8545
 PRIVATE_KEY=your_private_key_here
 CONTRACT_ADDRESS=0x...
 
@@ -90,6 +83,18 @@ The `AILend.sol` contract ensures that:
 3. Repayments are immutable and transparent on the ledger.
 
 ---
+
+## 🧠 System Architecture
+1. User submits loan request via Streamlit.
+2. FastAPI receives data and sanitizes input.
+3. AI Model (credit_model.joblib) predicts risk (0 or 1).
+4. If Approved:
+    * Web3.py signs a transaction to Ganache.
+    * SQLAlchemy saves the record to fintech.db.
+5. Frontend updates the dashboard metrics and transaction history.
+
+---
+*Built for Python Bootcamp JomHack C4 Capstone Project - Jan 2026*
 
 ### Final Tip for your Presentation:
 
