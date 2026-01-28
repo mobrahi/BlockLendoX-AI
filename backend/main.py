@@ -266,8 +266,8 @@ def read_history(db: Session = Depends(get_db)):
     return crud.get_transactions(db)
 
 # Profile/Signup Routes
-@app.post("/signup", response_model=schemas.UserResponse)
-def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
+@app.post("/signup", response_model=schemas.UserResponse) # <--- Defines the OUTPUT
+def signup(user: schemas.UserCreate, db: Session = Depends(get_db)): # <--- Defines the INPUT
     # --- NEW: Starter Score Logic ---
     # We give a base score so they aren't stuck at 0.
     # High income gets a better head start.

@@ -11,25 +11,24 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 np.random.seed(42)
 n_rows = 5000
 
+# ml_model/train.py logic update
 data = {
-    'income': np.random.randint(20000, 200000, n_rows),
-    'debt': np.random.randint(0, 50000, n_rows),
-    'credit_score': np.random.randint(300, 850, n_rows), # Changed Age to Score
-    'repayment_history': np.random.choice([0, 1], n_rows, p=[0.1, 0.9])
+    'income': np.random.randint(2000, 15000, n_rows), # Monthly
+    'debt': np.random.randint(0, 5000, n_rows),
+    'loan_amount': np.random.randint(100, 20000, n_rows), # Added feature
+    'credit_score': np.random.randint(300, 850, n_rows)
 }
-
 df = pd.DataFrame(data)
 
-# 2. Logic: Who gets approved?
-# Rule: Debt/Income ratio < 0.4 AND Credit Score > 600
+# Improved Logic: Deny if (Debt + Loan_Amount)/Income is too high
 df['target'] = (
-    ((df['debt'] / df['income']) < 0.40) & 
+    ((df['debt'] + (df['loan_amount'] / 12)) / df['income'] < 0.45) & # Pro-forma DTI
     (df['credit_score'] >= 600)
 ).astype(int)
 
 # 3. Train Model
 # Features: Income, Debt, Credit Score
-X = df[['income', 'debt', 'credit_score']]
+X = df[['income', 'debt', 'loan_amount', 'credit_score']]
 y = df['target']
 
 model = RandomForestClassifier(n_estimators=100, random_state=42)
