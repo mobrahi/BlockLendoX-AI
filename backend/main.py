@@ -427,3 +427,17 @@ def get_protocol_summary(db: Session = Depends(get_db)):
         "metrics": metrics_data,
         "users": user_list
     }
+
+@app.get("/admin/archived", response_model=list[schemas.TransactionResponse])
+def get_archived(db: Session = Depends(get_db)):
+    """Fetch only soft-deleted/archived transactions"""
+    return db.query(models.Transaction).filter(models.Transaction.status == "Archived").all()
+
+@app.post("/admin/verify")
+def verify_admin_password(password_data: dict, settings=Depends(get_settings)):
+    """Backend-only check: Keep the secret .env keys safe on the server"""
+    provided_password = password_data.get("password")
+    
+    if provided_password == settings.admin_password:
+        return {"verified": True}
+    return {"verified": False}

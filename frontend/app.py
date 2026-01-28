@@ -68,7 +68,7 @@ else:
 st.divider()
 
 # 5. Tabs for Roles
-tab_borrow, tab_lend, tab_stats = st.tabs(["🔹 Borrow Funds", "🔸 Provide Liquidity", "📈 Analytics"])
+tab_borrow, tab_lend, tab_stats, tab_admin = st.tabs(["🔹 Borrow", "🔸 Provide Liquidity", "📊 Analytics", "🔐 Admin"])
 
 # --- BORROWER TAB ---
 with tab_borrow:
@@ -341,3 +341,30 @@ with tab_stats:
             st.error("Backend Error: Could not load summary.")
     except Exception as e:
         st.error(f"UI Error: {e}")
+
+
+# --- ADMIN PORTAL TAB ---
+with tab_admin:
+    st.header("Security & Audit Portal")
+    
+    admin_password_input = st.text_input("Enter Admin Credentials", type="password")
+    
+    if admin_password_input:
+        # Ask the Backend to verify (The Secure Way)
+        try:
+            verify_res = requests.post(
+                "http://127.0.0.1:8000/admin/verify", 
+                json={"password": admin_password_input}
+            )
+            
+            if verify_res.status_code == 200 and verify_res.json().get("verified"):
+                st.success("Access Granted")
+                
+                # --- YOUR ADMIN CODE HERE ---
+                st.subheader("🗑️ Archived Transactions")
+                # (Keep the rest of your archived data fetching logic here)
+                
+            else:
+                st.error("Invalid Admin Password")
+        except Exception as e:
+            st.error(f"Security Engine Offline: {e}")

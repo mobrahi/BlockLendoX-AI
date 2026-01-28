@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     private_key: str = ""
     secret_key: str = "supersecret"
     database_url: str = "sqlite:///./sql_app.db"
+    admin_password: str = "default_admin_pass" 
     
     # This tells Pydantic where to look for the file
     model_config = SettingsConfigDict(
