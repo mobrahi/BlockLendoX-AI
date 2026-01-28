@@ -363,6 +363,8 @@ with tab_admin:
                 
                 if verify_res.status_code == 200 and verify_res.json().get("verified"):
                     st.session_state.admin_authenticated = True
+                    # --- SAVE THE PASSWORD FOR LATER USE ---
+                    st.session_state.admin_password_cache = admin_password_input
                     st.success("Access Granted!")
                     time.sleep(0.5)
                     st.rerun()
@@ -378,6 +380,8 @@ with tab_admin:
         # Logout Button at the top
         if st.button("🔒 Lock Portal & Logout"):
             st.session_state.admin_authenticated = False
+            # --- WIPE THE CACHE ---
+            st.session_state.admin_password_cache = None
             st.rerun()
 
         st.divider()
@@ -385,8 +389,14 @@ with tab_admin:
         st.write("Below are records marked as 'Archived'. These are excluded from standard analytics.")
 
         # --- DATA FETCHING (Only runs if authenticated) ---
+        headers = {"X-Admin-Password": st.session_state.get('admin_password_cache')}
+
         try:
-            archived_res = requests.get("http://127.0.0.1:8000/admin/archived")
+            archived_res = requests.get(
+                "http://127.0.0.1:8000/admin/archived",
+                headers=headers
+            )
+            
             if archived_res.status_code == 200:
                 archived_data = archived_res.json()
                 
