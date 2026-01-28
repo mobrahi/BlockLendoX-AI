@@ -11,6 +11,9 @@ from .database import get_db, engine
 from . import crud
 from .config import get_settings
 from . import database, crud, models, schemas
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi import Request 
 
 # --- SETUP & MODEL LOADING ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -22,12 +25,25 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-if MODEL_PATH.exists():
-    model = joblib.load(str(MODEL_PATH))
-    print(f"✅ AI Model successfully loaded from: {MODEL_PATH}")
-else:
-    print(f"❌ Error: Model not found at {MODEL_PATH}")
-    model = None
+app = FastAPI()
+
+# 1. Mount Static Files (CSS)
+# We use BASE_DIR logic to be safe with paths
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+# 2. Setup Templates (HTML)
+templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+# 3. Create the Landing Page Route
+@app.get("/")
+def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+# if MODEL_PATH.exists():
+#     model = joblib.load(str(MODEL_PATH))
+#     print(f"✅ AI Model successfully loaded from: {MODEL_PATH}")
+# else:
+#     print(f"❌ Error: Model not found at {MODEL_PATH}")
+#     model = None
 
 # --- BLOCKCHAIN HELPERS ---
 def trigger_blockchain_loan(
