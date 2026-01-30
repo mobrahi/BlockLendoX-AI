@@ -166,40 +166,6 @@ async def request_loan(request: schemas.LoanRequest,
         if prediction == 0:
             return {"status": "Rejected", "reason": "AI flagged risk based on PROFILE income."}
 
-        # ... (rest of the blockchain/db logic) ...
-# @app.post("/request-loan")
-# async def request_loan(
-#     request: schemas.LoanRequest, 
-#     db: Session = Depends(get_db), 
-#     settings=Depends(get_settings)
-# ):
-#     # 1. Setup variables
-#     clean_wallet = request.wallet.strip().replace("\ufeff", "")
-#     tx_hash = "0xPending"
-    
-#     print(f"🚀 Processing loan: {clean_wallet} | Amount: {request.amount} ETH")
-    
-#     if ml_model is None:
-#         raise HTTPException(status_code=500, detail="AI Model not loaded.")
-
-#     try:
-#         # STEP 1: AI Prediction
-#         # We simulate a credit score look-up based on their income history
-#         # (In a real app, this would come from Equifax or the User DB)
-        
-#         # Logic: If they have high income, give them a good 'simulated' score for the demo
-#         simulated_score = 750 if request.income > 3000 else 550
-#         # Pass the matched features: [Income, Debt, Credit Score]
-#         # Notice we pass 'simulated_score' (750), which is now valid because the model knows scores go up to 850.
-#         prediction = ml_model.predict([[request.income, request.debt, simulated_score]])[0]
-
-#         print(f"🤖 AI Inputs: Income={request.income}, Debt={request.debt}, Score={simulated_score}")
-#         print(f"🤖 AI Result: {prediction}")
-        
-#         if prediction == 0:
-#             print(f"❌ AI Rejected: {clean_wallet}")
-#             return {"status": "Rejected", "reason": "AI flagged high financial risk"}
-
         # STEP 2: Blockchain Execution
         tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
 
@@ -224,54 +190,6 @@ async def request_loan(request: schemas.LoanRequest,
     except Exception as e:
         print(f"🔥 Route Error: {e}")
         return {"status": "Error", "transaction_hash": f"0xERR_{str(e)[:10]}"}
-
-
-# @app.post("/request-loan")
-# async def request_loan(
-#     request: schemas.LoanRequest, 
-#     db: Session = Depends(get_db), 
-#     settings=Depends(get_settings)
-# ):
-#     # 1. Setup variables
-#     clean_wallet = request.wallet.strip().replace("\ufeff", "")
-#     tx_hash = "0xPending"
-    
-#     print(f"🚀 Processing loan: {clean_wallet} | Amount: {request.amount} ETH")
-    
-#     if model is None:
-#         raise HTTPException(status_code=500, detail="AI Model not loaded.")
-
-#     try:
-#         # STEP 1: AI Prediction
-#         prediction = model.predict([[request.income, request.debt, 750]])[0]
-        
-#         if prediction == 0:
-#             print(f"❌ AI Rejected: {clean_wallet}")
-#             return {"status": "Rejected", "reason": "AI flagged high financial risk"}
-
-#         # STEP 2: Blockchain Execution
-#         tx_hash = trigger_blockchain_loan(clean_wallet, request.amount, settings)
-
-#         # STEP 3: Save to SQL Database (The missing link!)
-#         if tx_hash and "ERR" not in tx_hash:
-#             tx_schema = schemas.TransactionCreate(
-#                 wallet_address=clean_wallet,
-#                 amount=request.amount,
-#                 tx_hash=tx_hash,
-#                 status="Approved"
-#             )
-#             crud.create_transaction(db, tx_schema)
-#             print(f"💾 SQL: Transaction {tx_hash} saved to fintech.db")
-        
-#         return {
-#             "status": "Approved", 
-#             "transaction_hash": tx_hash,
-#             "ai_score": "High Confidence"
-#         }
-
-#     except Exception as e:
-#         print(f"🔥 Route Error: {e}")
-#         return {"status": "Error", "transaction_hash": f"0xERR_{str(e)[:10]}"}
 
 # Add this new route to fetch history
 @app.get("/history")

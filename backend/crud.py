@@ -55,15 +55,6 @@ def update_transaction_status(db: Session, tx_id: int, new_status: str):
         db.refresh(db_tx)
     return db_tx
 
-# DELETE
-# def delete_transaction(db: Session, tx_id: int):
-#     db_tx = db.query(models.Transaction).filter(models.Transaction.id == tx_id).first()
-#     if db_tx:
-#         db.delete(db_tx)
-#         db.commit()
-#         return True
-#     return False
-
 def delete_transaction(db: Session, tx_id: int):
     db_tx = db.query(models.Transaction).filter(models.Transaction.id == tx_id).first()
     if db_tx:
